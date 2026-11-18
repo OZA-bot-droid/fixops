@@ -1,0 +1,22 @@
+syntax = "proto3";
+package fixops.schedule.v1;
+option java_package = "com.fixops.workorder.grpc.v1";
+option java_multiple_files = true;
+// Authenticated user scope must be obtained from validated transport metadata, NEVER this request DTO.
+service ScheduleQueryService {
+  rpc GetAvailableSlots(AvailabilityRequest) returns (AvailabilityResponse);
+}
+message AvailabilityRequest {
+  int64 asset_id = 1;
+  string date = 2; // YYYY-MM-DD organization local date
+  int32 duration_minutes = 3;
+}
+message AvailabilityResponse {
+  repeated AvailableSlot slots = 1;
+  string checked_at = 2; // ISO8601 UTC
+}
+message AvailableSlot {
+  string slot_id = 1; // opaque; not a durable reservation ID
+  string start_at = 2;
+  string end_at = 3;
+}
