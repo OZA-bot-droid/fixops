@@ -1,43 +1,50 @@
-# FixOps — v1.0 development scaffold
+# FixOps v1.0 팀 공통 개발환경 — 버전 계약 및 Overlay
 
-> 초기 골격(bootstrap)이며 완성된 서비스 구현·보안 검증·AWS 배포 결과가 아닙니다.
-> 기존 GitHub `main/docs`는 삭제/덮어쓰지 않습니다.
+> 본 ZIP은 **기존 FixOps v1.0 스캐폴드 위에 적용하는 설정 패치**입니다. 전체 실행 프로젝트를 새로 만든 것은 아닙니다. 기존 `docs` / 사용자 비밀정보 / 업무 구현 파일은 보존해야 합니다.
 
-## 팀 담당
+## 팀 합의 버전
 
-| 담당 | 브랜치 | 소유 영역 |
+| 구분 | 기준 | 잠금 상태 |
 |---|---|---|
-| 오좌언 | `feature/member`, `feature/gateway`, `feature/frontend-common`, `feature/infra` | Member/Organization, Gateway, Front shared, CI/AWS |
-| 이도형 | `feature/asset` | Asset/Location, Asset MCP tool |
-| 박천보 | `feature/workorder` | WorkOrder/Booking, gRPC 9093, Booking MCP tool |
-| 이도관 | `feature/inventory` | Inventory, Inventory MCP tool |
-| 하진철 | `feature/ai` | FastAPI, MCP server, RAG, OTEL |
+| Java | 21 LTS | Major 고정, 패치 각 플랫폼 검증 |
+| Spring Boot | **4.0.9** | 공통 고정(실제 Gradle 컴파일 필요) |
+| Spring Cloud | **2025.1.4** | 4.0.9 기반 출시 조합; 기존 2025.1.3 → 수정 |
+| Gradle | **8.14.3** | wrapper 생성 후 검증/커밋, 미포함 시 비재현 |
+| Node.js | **22.12.0** | `.nvmrc` |
+| npm | **10.9.2** | npm 버전 통일 |
+| Python | **3.12.x** | `.python-version`은 3.12, 가능하면 패치 통일 |
+| PostgreSQL | 16 | Docker 이미지 / RDS 16 |
+| pgvector | **0.8.2** | Docker `0.8.2-pg16-bookworm`, RDS 마이너 확인 |
+| React / Vite / Tailwind | 19 / 7 / 4 | package-lock.json 커밋 전엔 범위 선언뿐 |
+| LangChain / MCP / grpcio | D3 검증 | uv.lock 생성 전까지 미확정 |
 
-## 기술 후보 및 보류 조건
+## 적용 (기존 main/docs 덮어쓰지 말 것)
 
-Java 21; Spring Boot **4.0.9 후보**, Cloud **2025.1.3 후보**. D1 공식 BOM/CI 검증 후 고정. Python 3.12/FastAPI, Node 22/React19/Vite7/Tailwind4, PostgreSQL16/pgvector **0.8.2 목표**. RDS 인스턴스의 실제 확장 버전 설치 검증 필수. 이 패키지는 빌드 실행 검증을 완료하지 않았습니다.
+1. `develop`에서 새 `feature/infra`를 만든다. 이 overlay를 기존 스캐폴드 루트에 복사한다. **이미 수정한 파일은 반드시 Diff 확인**.
+2. 각 Java `build.gradle`의 `org.springframework.boot` 버전 `4.0.9` 유지, Gateway의 `spring-cloud-dependencies`는 `2025.1.4`로 바꾼다. 추가 Java 모듈의 Cloud BOM도 동일하게.
+3. 팀장 PC에서 `scripts/generate-gradle-wrappers.sh` 실행(임시 Gradle 필요). 생성된 **서비스별 wrapper JAR 포함** `gradlew*`와 `gradle/wrapper/*`를 커밋. Windows에서는 Gradle을 설치 후 서비스별 `gradle wrapper --gradle-version 8.14.3` 실행.
+4. Node `nvm use 22.12.0`, `npm i -g npm@10.9.2`; `frontend`에서 `npm install --package-lock-only`, 그 후 `npm ci && npm run build` 성공 시 package-lock 커밋. `package.json`에 `packageManager: npm@10.9.2` 설정.
+5. Python uv 설치 후 각각 `uv python install 3.12`, `uv lock`, `uv sync --frozen`, `uv run pytest` 실행. AI·MCP 기능 패키지는 D3 호환성 테스트로 정한 후 각각 `uv.lock` 커밋. `requirements.txt`와 pyproject.toml을 병행 관리하지 않는다.
+6. `.env.example`을 로컬 `.env`로 복사하고 비밀값 변경. `docker compose -f compose.local.yml up -d postgres`; `bash scripts/verify-vector.sh`.
+7. `python scripts/validate-env.py --root . --strict`로 필수 wrapper·lock 포함 검증. CI는 깨끗한 환경에서 `npm ci`, `./gradlew build`, `uv sync --frozen`, SQL vector check를 수행하도록 확장.
 
-## 로컬 시작 (코드 골격)
+### Windows 주의
+- PowerShell 검증: `powershell -ExecutionPolicy Bypass -File scripts/windows-check.ps1`.
+- `scripts/*.sh`는 Git Bash/WSL에서 실행. Docker Desktop Linux container 모드.
+- Windows 경로·개행 LF, UTF-8 통일. `.gitattributes`의 shell 스크립트 LF 유지.
 
-1. `.env.example`을 `.env`로 복사한 뒤 비밀값 입력 (절대 커밋 금지).
-2. `docker compose -f compose.local.yml config`로 구성 검사.
-3. 프론트: `cd frontend && npm install && npm run dev`.
-4. AI: `cd ai-service && python -m venv .venv && pip install -r requirements.txt && uvicorn app.main:app --reload --port 8085`.
-5. Java 서비스는 각 디렉터리 Gradle Wrapper 생성·의존성 검증 후 실행. `gradle wrapper` 및 `./gradlew bootRun` (Gradle 8.14.x 호환 여부 검증).
-6. Compose는 DB/서비스별 이미지·JWT 등의 필수 구성까지 연동해야 전체 E2E가 완성됩니다. 초기 `compose.local.yml`은 데이터베이스 개발 지원용입니다.
+## 버전 정책
+- `versions.env`는 **팀 합의용 단일 정책표**이며 Java/Python/npm이 이를 자동으로 해석하지 않음. 각 서비스 설정 및 lock과 실제 버전이 맞는지 CI 확인.
+- `package-lock.json`, `uv.lock`, `gradle-wrapper.jar`, 이미지 digest가 없으면 완전한 reproducible build라고 말하지 않는다.
+- `pgvector 0.8.7` 볼륨을 `0.8.2` 이미지에 그대로 연결하지 않으며, DB 덤프/복원 등 별도 이전 절차 사용.
+- RDS에서는 `ai_db`의 `pg_available_extension_versions`에 0.8.2가 있는지 먼저 확인.
 
-## 디렉터리 책임
+## 공식 출처
+- https://spring.io/blog/2026/10/23/spring-boot-4-0-9-available-now/
+- https://spring.io/blog/2026/10/23/spring-cloud-2025-1-4-has-been-released/
+- https://hub.docker.com/layers/pgvector/pgvector/0.8.2-pg16-bookworm/images/sha256-6d5c7b5aa3eb2098a2365f6d8cff723fded9e0e680757908b0b144b47f9c069c
+- https://docs.astral.sh/uv/concepts/python-versions/
+- https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-extensions.html
 
-- `contracts/openapi/` Java REST API / error model 동결.
-- `contracts/proto/` WorkOrder 조회 gRPC 단일 계약.
-- `member-service/`, `asset-service/`, `workorder-service/`, `inventory-service/`, `gateway/` Java 서비스별 구성.
-- `frontend/` 공통 라우팅·스타일·서비스별 features.
-- `ai-service/`, `mcp-server/` Python AI 및 MCP adapter.
-- `infra/` DB 확장·AWS·배포/비밀값 가이드.
-- `scripts/` 로컬 브랜치 초기화. 실행 전 팀장 코드 리뷰 필수.
-
-## Git 브랜치
-
-`main` 안정, `develop` 통합, `docs` 기존 문서, `feature/{member,gateway,asset,workorder,inventory,ai,frontend-common,infra}` 개별, `release/v1.0` D15에 생성. 각 기능 PR의 대상은 `develop`.
-
-이 ZIP을 로컬의 fixops 저장소 최상단으로 **파일 병합 복사**(기존 파일 덮어쓰기 금지)한 뒤 `feature/infra`에서 커밋하고 PR을 `develop`으로 보냅니다. 편의용 `scripts/bootstrap-branches.sh`는 `develop`을 원격 생성할 권한이 있는 사용자만 실행합니다.
+## 적용 자료
+이 전체 스캐폴드는 초기 69개 파일에 공통 개발환경을 적용한 통합본입니다. 실제 앱 구현/lockfiles/Gradle wrappers는 아직 완성되지 않았습니다. 기존 저장소에 적용 시 `docs/`와 변경된 파일을 반드시 Diff 확인하세요.

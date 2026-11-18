@@ -1,0 +1,4 @@
+# Copy the following three settings into each Java service gradle.properties.
+org.gradle.java.installations.auto-download=false
+org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+org.gradle.parallel=false
