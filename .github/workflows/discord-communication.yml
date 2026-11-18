@@ -1,0 +1,64 @@
+name: FixOps Communication
+
+on:
+  pull_request:
+    types: [opened, reopened, closed, ready_for_review]
+  issues:
+    types: [opened, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  communication:
+    runs-on: ubuntu-latest
+    env:
+      WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_COMMUNICATION }}
+    steps:
+      - name: Prepare safe Discord payload
+        id: info
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const crypto = require('crypto');
+          const e = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+          const item = e.pull_request || e.issue || {};
+          const comment = e.comment || e.review || {};
+          const safe = (s, n=900) => String(s ?? '').replace(/@/g, '@\u200b').replace(/\r/g, '').slice(0,n);
+          const lines = [
+            `**작성자:** ${safe(process.env.ACTOR,100)}`,
+            `**이벤트:** ${safe(process.env.EVENT_NAME,60)}`,
+            `**상태:** ${safe(e.action,60)}`,
+            `**제목:** ${safe(item.title,180)}`
+          ];
+          if (e.pull_request?.base?.ref) lines.push(`**대상 브랜치:** ${safe(e.pull_request.base.ref,100)}`);
+          if (e.pull_request && e.action === 'closed') lines.push(`**종료 유형:** ${e.pull_request.merged ? 'Merged' : 'Closed'}`);
+          if (['issue_comment','pull_request_review_comment','pull_request_review'].includes(process.env.EVENT_NAME)) {
+            lines.push('', '**💬 댓글 / 리뷰:**', safe(comment.body || '(본문 없음)', 700));
+          }
+          const url = comment.html_url || item.html_url || `https://github.com/${process.env.GITHUB_REPOSITORY}`;
+          const delimiter = `FIXOPS_${crypto.randomUUID().replace(/-/g,'')}`;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `body<<${delimiter}\n${lines.join('\n')}\n${delimiter}\nurl=${url}\n`);
+          NODE
+      - name: Notify Discord
+        if: env.WEBHOOK != ''
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ env.WEBHOOK }}
+          username: FixOps Communication
+          title: '💬 FixOps GitHub 소통 알림'
+          description: ${{ steps.info.outputs.body }}
+          url: ${{ steps.info.outputs.url }}
+          status: Success
+          color: '0x5865F2'
+          nodetail: true
+          nofail: false
