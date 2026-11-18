@@ -1,0 +1,26 @@
+name: fixops-db-local
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.2-pg16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      MEMBER_DB_PASSWORD: ${MEMBER_DB_PASSWORD:?required}
+      ASSET_DB_PASSWORD: ${ASSET_DB_PASSWORD:?required}
+      WORKORDER_DB_PASSWORD: ${WORKORDER_DB_PASSWORD:?required}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD:?required}
+      AI_DB_PASSWORD: ${AI_DB_PASSWORD:?required}
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - fixops_local_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/bootstrap:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: '256mb'
+volumes:
+  fixops_local_pgdata:

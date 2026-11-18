@@ -1,0 +1,9 @@
+[project]
+name = "fixops-mcp-server"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = ["httpx>=0.27,<1", "pydantic>=2.12,<3"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.9,<1"]
+# Add compatible MCP SDK only after D3 interoperability check; commit uv.lock.
