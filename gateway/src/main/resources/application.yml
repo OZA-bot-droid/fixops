@@ -1,8 +1,19 @@
 server:
-  port: 8080
+  port: ${PORT:8080}
 spring:
   application:
     name: gateway
+fixops:
+  jwt:
+    issuer: fixops-auth
+    audience: fixops-api
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:./local-secrets/jwt/public_key.pem}
+  upstream:
+    member: ${MEMBER_SERVICE_URL:http://127.0.0.1:8081}
+    asset: ${ASSET_SERVICE_URL:http://127.0.0.1:8082}
+    workorder: ${WORKORDER_SERVICE_URL:http://127.0.0.1:8083}
+    inventory: ${INVENTORY_SERVICE_URL:http://127.0.0.1:8084}
+    ai: ${AI_SERVICE_URL:http://127.0.0.1:8085}
 management:
   endpoints:
     web:

@@ -1,8 +1,20 @@
 server:
-  port: 8083
+  port: ${PORT:8083}
 spring:
   application:
     name: workorder-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/workorder_db}
+    username: ${DB_USER:workorder_app}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration
 management:
   endpoints:
     web:

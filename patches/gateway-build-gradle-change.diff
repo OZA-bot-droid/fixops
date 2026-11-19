@@ -1,4 +1,0 @@
-# Apply manually to gateway/build.gradle (this is a human readable change note, not a git patch).
-# OLD: implementation platform('org.springframework.cloud:spring-cloud-dependencies:2025.1.3')
-# NEW: implementation platform('org.springframework.cloud:spring-cloud-dependencies:2025.1.4')
-# Run Gradle compile with a generated wrapper before claiming compatibility.

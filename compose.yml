@@ -1,0 +1,150 @@
+name: fixops
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.2-pg16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      MEMBER_DB_PASSWORD: ${MEMBER_DB_PASSWORD:?required}
+      ASSET_DB_PASSWORD: ${ASSET_DB_PASSWORD:?required}
+      WORKORDER_DB_PASSWORD: ${WORKORDER_DB_PASSWORD:?required}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD:?required}
+      AI_DB_PASSWORD: ${AI_DB_PASSWORD:?required}
+    volumes:
+      - fixops_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/bootstrap:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "${DB_BIND_IP:-127.0.0.1}:${DB_PORT:-5432}:5432"
+    shm_size: 256mb
+
+  member:
+    build: { context: ./member-service }
+    environment:
+      PORT: 8081
+      DB_URL: jdbc:postgresql://postgres:5432/member_db
+      DB_USER: member_app
+      DB_PASSWORD: ${MEMBER_DB_PASSWORD:?required}
+      JWT_PRIVATE_KEY_PATH: /app/keys/private_key.pem
+      JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
+      PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+      PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+      DEMO_EMAIL_VERIFICATION_BYPASS: ${DEMO_EMAIL_VERIFICATION_BYPASS:-false}
+      DEMO_BUILDING_APPROVAL_BYPASS: ${DEMO_BUILDING_APPROVAL_BYPASS:-false}
+    volumes:
+      - ./local-secrets/jwt:/app/keys:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: on-failure
+
+  asset:
+    build: { context: ./asset-service }
+    environment:
+      PORT: 8082
+      DB_URL: jdbc:postgresql://postgres:5432/asset_db
+      DB_USER: asset_app
+      DB_PASSWORD: ${ASSET_DB_PASSWORD:?required}
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: on-failure
+
+  workorder:
+    build: { context: ./workorder-service }
+    environment:
+      PORT: 8083
+      DB_URL: jdbc:postgresql://postgres:5432/workorder_db
+      DB_USER: workorder_app
+      DB_PASSWORD: ${WORKORDER_DB_PASSWORD:?required}
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: on-failure
+    # gRPC :9093 is NOT yet implemented by the application.
+
+  inventory:
+    build: { context: ./inventory-service }
+    environment:
+      PORT: 8084
+      DB_URL: jdbc:postgresql://postgres:5432/inventory_db
+      DB_USER: inventory_app
+      DB_PASSWORD: ${INVENTORY_DB_PASSWORD:?required}
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: on-failure
+
+  # One-off migration job; the same AI image is reused by the FastAPI application.
+  ai-migrate:
+    build: { context: ./ai-service }
+    environment: &ai_db_env
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_db
+      DB_USER: ai_app
+      DB_PASSWORD: ${AI_DB_PASSWORD:?required}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  ai:
+    build: { context: ./ai-service }
+    environment:
+      <<: *ai_db_env
+      PORT: 8085
+      MCP_SERVER_URL: http://mcp:8090/mcp
+    depends_on:
+      ai-migrate: { condition: service_completed_successfully }
+      mcp: { condition: service_started }
+    restart: on-failure
+    # /mcp integration and LangChain are NOT implemented in the skeleton.
+
+  mcp:
+    build: { context: ./mcp-server }
+    environment:
+      PORT: 8090
+      MEMBER_SERVICE_URL: http://member:8081
+      ASSET_SERVICE_URL: http://asset:8082
+      WORKORDER_SERVICE_URL: http://workorder:8083
+      INVENTORY_SERVICE_URL: http://inventory:8084
+      WORKORDER_GRPC_TARGET: workorder:9093
+    depends_on:
+      member: { condition: service_started }
+      asset: { condition: service_started }
+      workorder: { condition: service_started }
+      inventory: { condition: service_started }
+    restart: on-failure
+
+  gateway:
+    build: { context: ./gateway }
+    environment:
+      PORT: 8080
+      JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
+      MEMBER_SERVICE_URL: http://member:8081
+      ASSET_SERVICE_URL: http://asset:8082
+      WORKORDER_SERVICE_URL: http://workorder:8083
+      INVENTORY_SERVICE_URL: http://inventory:8084
+      AI_SERVICE_URL: http://ai:8085
+    volumes:
+      - ./local-secrets/jwt:/app/keys:ro
+    depends_on:
+      member: { condition: service_started }
+      asset: { condition: service_started }
+      workorder: { condition: service_started }
+      inventory: { condition: service_started }
+      ai: { condition: service_started }
+    restart: on-failure
+
+  frontend:
+    build: { context: ./frontend }
+    ports:
+      - "127.0.0.1:8088:80"
+    depends_on:
+      gateway: { condition: service_started }
+    restart: on-failure
+
+volumes:
+  fixops_pgdata:

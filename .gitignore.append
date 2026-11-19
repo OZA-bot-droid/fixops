@@ -1,6 +1,0 @@
-# append to existing repository .gitignore (do not overwrite)
-.env.db.local
-.env.db.integration
-.env.*.secret
-*.pem
-!*.pem.example

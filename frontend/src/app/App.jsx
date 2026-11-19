@@ -1,10 +1,6 @@
-import { Link, Route, Routes } from 'react-router-dom';
-const views = ['member', 'asset', 'workorder', 'inventory', 'ai'];
-export default function App() {
-  return <main className="min-h-screen bg-fixops-background text-fixops-text p-8"><div className="mx-auto max-w-5xl space-y-5">
-    <header><h1 className="text-3xl font-semibold text-fixops-primary">FixOps</h1><p>MSA 개발 기본 틀 · 아직 인증·서비스 연동 전입니다.</p></header>
-    <nav className="flex flex-wrap gap-3">{views.map(x=><Link className="rounded-lg border px-4 py-2" key={x} to={'/'+x}>{x}</Link>)}</nav>
-    <Routes><Route path="/" element={<p>팀원별 개발 화면은 /member, /asset, /workorder, /inventory, /ai에 연결합니다.</p>}/>
-      {views.map(x=><Route key={x} path={'/'+x} element={<section className="rounded-xl border p-5">{x} placeholder · 담당자 구현 예정</section>}/>)}
-    </Routes></div></main>;
-}
+import {Navigate,Route,Routes} from 'react-router-dom';
+import {AuthProvider,useAuth} from '../features/member/AuthProvider';
+import AppLayout,{ComingSoon} from '../components/layout/AppLayout';
+import {LoginPage,SignupPage,PasswordResetPage,MemberHome,OrganizationApply,PlatformOrganizations,ProfilePage,UnavailablePage} from '../features/member/Pages';
+function Protected({children,platform=false}){const {user,loading}=useAuth();if(loading)return <div className="grid min-h-screen place-items-center text-fixops-muted">인증 상태 확인 중…</div>;if(!user)return <Navigate to="/login" replace/>;if(platform&&!user.platformAdmin)return <Navigate to="/member" replace/>;return children}
+export default function App(){return <AuthProvider><Routes><Route path="/" element={<Navigate to="/member" replace/>}/><Route path="/login" element={<LoginPage/>}/><Route path="/signup" element={<SignupPage/>}/><Route path="/forgot-password" element={<PasswordResetPage/>}/><Route element={<Protected><AppLayout/></Protected>}><Route path="/member" element={<MemberHome/>}/><Route path="/profile" element={<ProfilePage/>}/><Route path="/organizations/apply" element={<OrganizationApply/>}/><Route path="/organizations/join" element={<UnavailablePage title="조직 가입·초대 수락"/>}/><Route path="/members/manage" element={<UnavailablePage title="회원·역할 관리"/>}/><Route path="/audit" element={<UnavailablePage title="권한 변경 감사 로그"/>}/><Route path="/asset" element={<ComingSoon name="설비·위치"/>}/><Route path="/workorder" element={<ComingSoon name="작업 관리"/>}/><Route path="/booking" element={<ComingSoon name="예약 일정"/>}/><Route path="/inventory" element={<ComingSoon name="부품·재고"/>}/><Route path="/ai" element={<ComingSoon name="AI 점검센터"/>}/></Route><Route element={<Protected platform><AppLayout/></Protected>}><Route path="/platform/organizations" element={<PlatformOrganizations/>}/></Route><Route path="*" element={<Navigate to="/" replace/>}/></Routes></AuthProvider>}

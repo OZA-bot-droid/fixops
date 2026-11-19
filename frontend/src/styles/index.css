@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @theme {
-  --color-fixops-primary: #0d9488;
-  --color-fixops-background: #f8fafc;
-  --color-fixops-text: #0f172a;
+  --color-fixops-primary: #3069f6;
+  --color-fixops-primary-hover: #2457d4;
+  --color-fixops-sidebar: #111c32;
+  --color-fixops-sidebar-active: #23385b;
+  --color-fixops-background: #f4f7fc;
+  --color-fixops-surface: #ffffff;
+  --color-fixops-text: #17243c;
+  --color-fixops-muted: #718098;
+  --color-fixops-border: #e4eaf3;
+  --color-fixops-success: #159e73;
+  --color-fixops-warning: #d8971c;
+  --color-fixops-danger: #e55a65;
+  --color-fixops-info: #7956e8;
 }
+:root {font-family: Inter, 'Pretendard', 'Noto Sans KR', system-ui, sans-serif; color: #17243c; background:#f4f7fc; font-synthesis:none;}
+*{box-sizing:border-box} body{margin:0;min-width:320px} button,input,select,textarea{font:inherit}button{cursor:pointer} button:disabled{cursor:not-allowed;opacity:.55}
+a{color:inherit;text-decoration:none} :focus-visible{outline:3px solid #9cc0ff;outline-offset:2px}

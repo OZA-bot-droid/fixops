@@ -1,18 +1,21 @@
+# FixOps: local secrets, environments, generated files
 .env
 .env.*
 !.env.example
-**/local-secrets/
-**/__pycache__/
+.local/
+local-secrets/
+*.pem
 **/.venv/
+**/__pycache__/
 **/.pytest_cache/
 **/.ruff_cache/
 **/build/
 **/.gradle/
 **/node_modules/
-**/dist/
-*.pem
-*.key
-*.p12
+frontend/dist/
 .DS_Store
 .idea/
-.vscode/
+.vscode/settings.local.json
+# Keep dependency locks in Git
+!**/package-lock.json
+!**/uv.lock

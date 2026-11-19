@@ -1,8 +1,34 @@
 server:
-  port: 8081
+  port: ${PORT:8081}
 spring:
   application:
     name: member-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/member_db}
+    username: ${DB_USER:member_app}
+    password: ${DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+fixops:
+  jwt:
+    issuer: fixops-auth
+    audience: fixops-api
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:./local-secrets/jwt/private_key.pem}
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:./local-secrets/jwt/public_key.pem}
+    access-minutes: 15
+    refresh-days: 7
+  demo:
+    email-verification-bypass: ${DEMO_EMAIL_VERIFICATION_BYPASS:false}
+    building-approval-bypass: ${DEMO_BUILDING_APPROVAL_BYPASS:false}
+  bootstrap:
+    platform-email: ${PLATFORM_ADMIN_EMAIL:}
+    platform-password: ${PLATFORM_ADMIN_PASSWORD:}
 management:
   endpoints:
     web:
