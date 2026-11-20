@@ -1,6 +1,3 @@
--- inventory-service 초기 스키마. 자리표시자 V1__initialize_service.sql을 대체한다.
--- 주의: 적용된 Flyway SQL은 수정할 수 없다. D5 계약 동결 후 변경은 V2__... 로 추가한다.
-
 CREATE TABLE part (
     id              BIGSERIAL PRIMARY KEY,
     organization_id BIGINT       NOT NULL,
