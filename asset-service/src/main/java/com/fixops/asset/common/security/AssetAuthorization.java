@@ -5,9 +5,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
+/** Gateway가 인증 후 전달한 사용자 ID·역할·조직 범위로 Asset 도메인 접근 권한을 확인한다. */
 @Component
-/** Gateway가 인증 후 전달한 사용자 ID·역할·조직 범위로 Location 접근 권한을 확인한다. */
-public class LocationAuthorization {
+public class AssetAuthorization {
     public void requireRead(Long memberId, String role, Long memberOrganizationId, Long requestOrganizationId) {
         requireMembership(memberId, role, memberOrganizationId, requestOrganizationId,
                 List.of("ADMIN", "TECHNICIAN"));
