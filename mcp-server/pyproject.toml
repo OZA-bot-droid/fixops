@@ -6,8 +6,9 @@ dependencies = [
     "httpx>=0.27,<1",
     "mcp>=2,<3",
     "pydantic>=2.12,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
 ]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.9,<1"]
-# Add compatible MCP SDK only after D3 interoperability check; commit uv.lock.
