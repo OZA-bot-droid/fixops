@@ -1,5 +1,6 @@
 package com.fixops.workorder.report.dto;
 
+import com.fixops.workorder.report.domain.Report;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -32,4 +33,15 @@ public class ReportSaveDTO {
 
     // 신고 내용
     private String description;
+
+    public Report toEntity(Long reportedBy) {
+        return Report.builder()
+                .organizationId(this.organizationId)
+                .complexId(this.complexId)
+                .locationId(this.locationId)
+                .title(this.title.trim())
+                .description(this.description)
+                .reportedBy(reportedBy)
+                .build();
+    }
 }
