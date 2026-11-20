@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.chat_service import run_chat
+from app.core.exceptions import MCPConnectionError, AIProviderUnavailableError
 import logging
 
 # prefix : 모든 라우트 앞에 붙을 경로
@@ -17,6 +18,16 @@ async def chat(body: ChatRequest):
         answer = await run_chat(body.message)
         return ChatResponse(answer=answer)
 
-    except RuntimeError as e:
+    except MCPConnectionError as e:
         logger.exception("MCP server connection error")
-        raise HTTPException(status_code=503, detail="AI server error") from e
+        raise HTTPException(
+            status_code=503,
+            detail="AI server error"
+        ) from e
+
+    except AIProviderUnavailableError as e:
+        logger.exception("LLM provider unavailable")
+        raise HTTPException(
+            status_code=503,
+            detail="LLM provider unavailable or response error"
+        ) from e
