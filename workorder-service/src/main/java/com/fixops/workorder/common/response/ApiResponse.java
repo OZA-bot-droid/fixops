@@ -23,8 +23,13 @@ public class ApiResponse<T> {
     }
 
     // 실패 응답
-    public static ApiResponse<Void> error(String code, String message, String traceId) {
-        return new ApiResponse<>(false, null, new ApiError(code, message), traceId, Instant.now());
+    public static ApiResponse<Void> error(ErrorCode errorCode, String traceId) {
+        return new ApiResponse<>(false, null, new ApiError(errorCode.getCode(), errorCode.getMessage()), traceId, Instant.now());
+    }
+
+    // 에러 메시지를 바꿔 전달할 때
+    public static ApiResponse<Void> error(ErrorCode errorCode, String message, String traceId) {
+        return new ApiResponse<>(false, null, new ApiError(errorCode.getCode(), message), traceId, Instant.now());
     }
 
     @Getter
