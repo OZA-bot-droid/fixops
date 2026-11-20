@@ -76,7 +76,6 @@ services:
       postgres: { condition: service_healthy }
     restart: on-failure
 
-  # One-off migration job; the same AI image is reused by the FastAPI application.
   ai-migrate:
     build: { context: ./ai-service }
     environment: &ai_db_env
@@ -95,17 +94,21 @@ services:
     environment:
       <<: *ai_db_env
       PORT: 8085
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?required}
+      OPENAI_MODEL: ${OPENAI_MODEL:?required}
       MCP_SERVER_URL: http://mcp:8090/mcp
     depends_on:
       ai-migrate: { condition: service_completed_successfully }
       mcp: { condition: service_started }
     restart: on-failure
-    # /mcp integration and LangChain are NOT implemented in the skeleton.
+    # MCP Tool security and Java ACLs must be implemented before domain tool enablement.
 
   mcp:
     build: { context: ./mcp-server }
     environment:
       PORT: 8090
+      MCP_PORT: 8090
+      MCP_BIND_HOST: 0.0.0.0
       MEMBER_SERVICE_URL: http://member:8081
       ASSET_SERVICE_URL: http://asset:8082
       WORKORDER_SERVICE_URL: http://workorder:8083
@@ -117,6 +120,7 @@ services:
       workorder: { condition: service_started }
       inventory: { condition: service_started }
     restart: on-failure
+    # No external port publishing: isolate on the Compose network.
 
   gateway:
     build: { context: ./gateway }
