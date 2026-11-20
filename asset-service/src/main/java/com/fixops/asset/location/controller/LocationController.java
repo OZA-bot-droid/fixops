@@ -1,6 +1,6 @@
 package com.fixops.asset.location.controller;
 
-import com.fixops.asset.common.security.LocationAuthorization;
+import com.fixops.asset.common.security.AssetAuthorization;
 import com.fixops.asset.location.dto.LocationCreateRequest;
 import com.fixops.asset.location.dto.LocationResponse;
 import com.fixops.asset.location.dto.LocationUpdateRequest;
@@ -28,9 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 public class LocationController {
     private final LocationService locations;
-    private final LocationAuthorization authorization;
+    private final AssetAuthorization authorization;
 
-    public LocationController(LocationService locations, LocationAuthorization authorization) {
+    public LocationController(LocationService locations, AssetAuthorization authorization) {
         this.locations = locations;
         this.authorization = authorization;
     }
