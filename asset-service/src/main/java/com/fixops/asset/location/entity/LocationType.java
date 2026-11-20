@@ -1,5 +1,7 @@
 package com.fixops.asset.location.entity;
 
+import com.fixops.asset.common.enums.IndustryType;
+
 public enum LocationType {
     COMPLEX,
     BUILDING,
@@ -25,5 +27,12 @@ public enum LocationType {
     /** 루트 노드는 아파트 단지 또는 공장이다. */
     public boolean isRoot() {
         return this == COMPLEX || this == FACTORY;
+    }
+
+    public IndustryType industryType() {
+        return switch (this) {
+            case COMPLEX, BUILDING, UNIT, COMMON_AREA -> IndustryType.BUILDING;
+            case FACTORY, AREA, LINE, EQUIPMENT_LOCATION -> IndustryType.FACTORY;
+        };
     }
 }
