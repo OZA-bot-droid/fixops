@@ -13,6 +13,9 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   "langchain[mcp]>=1.4,<2",
   "langchain-openai>=1,<2",
+  "python-dotenv>=1.2.4",
+  "openai>=3.55.1",
+  "pyjwt[crypto]>=2.15.1",
 ]
 
 [dependency-groups]

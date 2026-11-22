@@ -2,6 +2,7 @@
 
 Use URL.create rather than manually interpolating passwords into a connection string.
 """
+
 import os
 
 from sqlalchemy import create_engine
