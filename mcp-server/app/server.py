@@ -8,9 +8,10 @@ import os
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
+from app.tools.dev import register_dev_tools
 
 mcp = MCPServer("FixOps MCP Server")
-
+register_dev_tools(mcp)
 
 @mcp.tool()
 def mcp_server_ping(message: str = "hello") -> dict[str, str]:
