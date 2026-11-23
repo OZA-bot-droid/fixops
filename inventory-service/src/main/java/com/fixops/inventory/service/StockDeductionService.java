@@ -14,7 +14,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 재고 차감. 같은 규칙을 두 가지 동시성 방식으로 구현해 테스트로 비교한다.
+ * 재고 차감. 동시 요청은 stock_balance 행을 SELECT ... FOR UPDATE 로 잠가 순차 처리한다(D5 결정).
  * 한 트랜잭션 안에서 (잔액 차감 + 부품 사용 기록 + 원장 기록)이 모두 성공하거나 모두 롤백된다.
  */
 @Service
@@ -28,7 +28,7 @@ public class StockDeductionService {
         this.tx = new TransactionTemplate(txManager);
     }
 
-    /** 방식 1: SELECT ... FOR UPDATE 로 잔액 행을 잠근 뒤 확인하고 차감한다. */
+    /** 잔액 행을 잠근 뒤 중복 여부와 재고를 확인하고 차감한다. */
     public DeductResult deductWithLock(DeductCommand c) {
         return tx.execute(status -> {
             List<Integer> locked = jdbc.queryForList(
@@ -52,41 +52,6 @@ public class StockDeductionService {
             long usageId = insertUsage(c);
             insertMovement(c);
             return new DeductResult(usageId, current - c.quantity(), false);
-        });
-    }
-
-    /** 방식 2: 조건부 UPDATE (WHERE quantity >= ?) 한 문장으로 확인과 차감을 동시에 한다. */
-    public DeductResult deductConditional(DeductCommand c) {
-        return tx.execute(status -> {
-            // 사용 기록을 먼저 넣어 operationKey 중복을 UNIQUE 제약으로 막는다.
-            List<Long> inserted = jdbc.queryForList(
-                    "INSERT INTO part_usage (organization_id, work_order_id, part_id, quantity, operation_key) "
-                            + "VALUES (?, ?, ?, ?, ?) ON CONFLICT (organization_id, operation_key) DO NOTHING "
-                            + "RETURNING id",
-                    Long.class, c.organizationId(), c.workOrderId(), c.partId(), c.quantity(), c.operationKey());
-            if (inserted.isEmpty()) {
-                DeductResult replay = replayIfExists(c);
-                if (replay == null) {
-                    throw new IllegalStateException("operationKey conflict but usage not found");
-                }
-                return replay;
-            }
-            List<Integer> remaining = jdbc.queryForList(
-                    "UPDATE stock_balance SET quantity = quantity - ?, version = version + 1, updated_at = now() "
-                            + "WHERE part_id = ? AND quantity >= ? RETURNING quantity",
-                    Integer.class, c.quantity(), c.partId(), c.quantity());
-            if (remaining.isEmpty()) {
-                // 예외로 트랜잭션이 롤백되면서 위에서 넣은 사용 기록도 함께 사라진다.
-                Integer exists = jdbc.queryForObject(
-                        "SELECT count(*) FROM stock_balance WHERE part_id = ?", Integer.class, c.partId());
-                if (exists == null || exists == 0) {
-                    throw new StockNotFoundException("stock balance not found: partId=" + c.partId());
-                }
-                throw new InsufficientStockException(
-                        "insufficient stock: partId=" + c.partId() + ", requested=" + c.quantity());
-            }
-            insertMovement(c);
-            return new DeductResult(inserted.get(0), remaining.get(0), false);
         });
     }
 
