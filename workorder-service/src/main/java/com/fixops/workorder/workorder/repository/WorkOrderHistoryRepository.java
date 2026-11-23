@@ -1,0 +1,12 @@
+package com.fixops.workorder.workorder.repository;
+
+import com.fixops.workorder.workorder.domain.WorkOrderHistory;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface WorkOrderHistoryRepository extends JpaRepository<WorkOrderHistory, Long> {
+
+    // 작업지시 상태 변경 이력 (최신순)
+    List<WorkOrderHistory> findByWorkOrderIdOrderByCreatedAtDescIdDesc(Long workOrderId);
+}

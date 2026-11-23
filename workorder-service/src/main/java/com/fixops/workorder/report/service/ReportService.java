@@ -133,7 +133,7 @@ public class ReportService {
 
 //    ==============================
 //
-//        검증 함수
+//        검증 관련
 //
 //    ==============================
 
@@ -207,7 +207,7 @@ public class ReportService {
         }
 
         // 본인 신고 조회
-        Report report = reportRepository.findByIdAndReportedBy(reportId, userId)
+        Report report = reportRepository.findEditableByIdAndReportedByForUpdate(reportId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
         // REPORTED 상태에서만 수정·취소 가능
