@@ -68,4 +68,22 @@ public class Report extends BaseEntity {
     // 작업지시로 전환되었을 때 생성된 WorkOrder ID
     @Column(name = "work_order_id")
     private Long workOrderId;
+
+
+    // 신고 상태 변경
+    public void changeStatus(ReportStatus newStatus) {
+        this.status = newStatus;
+    }
+
+    // 신고 수정
+    public void updateReport(Long locationId, String title, String description) {
+        this.locationId = locationId;
+        this.title = title.trim();
+        this.description = description;
+    }
+
+    // 신고와 작업지시 연결
+    public void linkWorkOrder(Long workOrderId) {
+        this.workOrderId = workOrderId;
+    }
 }

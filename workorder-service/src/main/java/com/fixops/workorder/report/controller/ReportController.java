@@ -2,6 +2,7 @@ package com.fixops.workorder.report.controller;
 
 import com.fixops.workorder.common.response.ApiResponse;
 import com.fixops.workorder.report.dto.ReportSaveDTO;
+import com.fixops.workorder.report.dto.ReportUpdateDTO;
 import com.fixops.workorder.report.service.ReportService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,11 +25,22 @@ public class ReportController {
 
     // 유저 신고 조회
     @GetMapping("/report/my")
-    public ResponseEntity<?> getMyReport(@RequestHeader("X-Member-Id") Long userId,
-                                         @RequestParam(defaultValue = "0") int page,
-                                         @RequestParam(defaultValue = "10") int size,
-                                         @RequestParam(defaultValue = "createdAt,desc") String sort){
+    public ResponseEntity<?> getMyReport(@RequestHeader("X-Member-Id") Long userId, @RequestParam(required = false) String title, @RequestParam(required = false) String status, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
 
-        return new ResponseEntity<>(ApiResponse.success(reportService.getMyReport(userId, page, size, sort)), HttpStatus.OK);
+        return ResponseEntity.ok(ApiResponse.success(reportService.getMyReport(userId, title, status, page, size)));
     }
+
+    // 신고 수정
+    @PatchMapping("/report/{reportId}")
+    public ResponseEntity<?> updateReport(@PathVariable Long reportId, @Valid @RequestBody ReportUpdateDTO dto, @RequestHeader("X-Member-Id") Long userId) {
+        return ResponseEntity.ok(ApiResponse.success(reportService.updateReport(reportId, dto, userId)));
+    }
+
+    // 신고 취소
+    @DeleteMapping("/report/{reportId}")
+    public ResponseEntity<?> deleteReport(@PathVariable Long reportId, @RequestHeader("X-Member-Id") Long userId) {
+
+        return ResponseEntity.ok(ApiResponse.success(reportService.cancelReport(reportId, userId)));
+    }
+
 }

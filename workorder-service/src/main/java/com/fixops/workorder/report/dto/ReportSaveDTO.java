@@ -23,7 +23,7 @@ public class ReportSaveDTO {
     private Long complexId;
 
     // 장소 ID
-    @NotNull(message = "장소 ID는 필수입니다.")
+    @NotNull(message = "장소는 필수입니다.")
     private Long locationId;
 
     // 신고 제목
