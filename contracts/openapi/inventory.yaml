@@ -7,7 +7,7 @@ info:
     기준 문서: docs/04(API·오류 계약), docs/06(재고 정합성), docs/02(ERD).
 
     D5 계약 동결 전 초안. 아래 항목은 D5 협의 후 확정한다.
-      1. 오류 코드 이름이 docs/04와 contracts/error-codes.md에서 다름. 본 문서는 docs/04를 따름.
+      1. 오류 코드는 docs/04를 기준으로 사용한다(2026-11-23 팀장 결정). contracts/error-codes.md의 다른 이름은 docs/04에 맞춰 수정 필요.
       2. 재고 단위가 조직(organization)인지 단지(complex)인지. 본 문서는 조직 단위 가정.
       3. 비활성 부품과 같은 SKU 등록 시 동작. 본 문서는 409 + 기존 partId 안내로 제안.
       4. 재고가 남은 부품의 비활성화 허용 여부. 본 문서에는 비활성화 API 미포함.
