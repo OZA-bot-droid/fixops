@@ -52,8 +52,7 @@ public class StockController {
             throw new IllegalArgumentException("Idempotency-Key 와 operationKey 가 다릅니다.");
         }
 
-        StockChangeResult result = stockService.receive(
-                request.toCommand(member.organizationId(), member.memberId()));
+        StockChangeResult result = stockService.receive(member.organizationId(), member.memberId(), request);
 
         HttpStatus status = result.replayed() ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(ApiResponse.ok(result));

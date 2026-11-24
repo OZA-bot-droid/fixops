@@ -6,7 +6,6 @@ import com.fixops.inventory.common.security.InventoryAuthorization;
 import com.fixops.inventory.part.dto.PartCreateRequest;
 import com.fixops.inventory.part.dto.PartPageResult;
 import com.fixops.inventory.part.dto.PartResult;
-import com.fixops.inventory.part.dto.PartSearchCommand;
 import com.fixops.inventory.part.dto.PartStatusFilter;
 import com.fixops.inventory.part.dto.PartUpdateRequest;
 import com.fixops.inventory.part.service.PartService;
@@ -42,7 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
  * [Controller 가 하는 일]
  *   1) 요청에서 값을 꺼낸다 (헤더, URL 파라미터, 본문)
  *   2) 권한을 확인한다
- *   3) Command 로 바꿔 Service 를 부른다
+ *   3) 로그인한 사람의 단지 번호와 요청을 Service 에 넘긴다 (단지 번호는 요청이 아니라 헤더에서만)
  *   4) 결과를 공통 응답 모양(ApiResponse)에 담아 돌려준다
  *   업무 규칙(SKU 중복 등)은 여기서 판단하지 않는다. 그건 Service 의 일이다.
  */
@@ -80,10 +79,9 @@ public class PartController {
 
         CurrentMember member = authorization.requireRead(memberId, role, organizationId);
 
-        PartSearchCommand command = new PartSearchCommand(member.organizationId(), q, status, lowStockOnly);
         Pageable pageable = PageRequest.of(page, size, toSort(sort));
 
-        return ApiResponse.ok(partService.search(command, pageable));   // 200
+        return ApiResponse.ok(partService.search(member.organizationId(), q, status, lowStockOnly, pageable));   // 200
     }
 
     /**
@@ -102,7 +100,7 @@ public class PartController {
 
         CurrentMember member = authorization.requireAdmin(memberId, role, organizationId);
 
-        PartResult created = partService.create(request.toCommand(member.organizationId()));
+        PartResult created = partService.create(member.organizationId(), request);
 
         return ResponseEntity
                 .created(URI.create("/api/inventory/parts/" + created.id()))   // 201 + Location 헤더
@@ -126,7 +124,7 @@ public class PartController {
 
         CurrentMember member = authorization.requireAdmin(memberId, role, organizationId);
 
-        return ApiResponse.ok(partService.update(request.toCommand(member.organizationId(), partId)));   // 200
+        return ApiResponse.ok(partService.update(member.organizationId(), partId, request));   // 200
     }
 
     /** "name,asc" → Sort. 허용하지 않은 이름이나 방향이면 400 이 되도록 IllegalArgumentException. */

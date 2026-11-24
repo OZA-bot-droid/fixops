@@ -126,7 +126,7 @@ public class GlobalExceptionHandler {
      * 형식이 틀린 입력.
      *   - MethodArgumentTypeMismatchException : ?page=abc, ?status=WRONG
      *   - HttpMessageNotReadableException     : 본문 JSON 이 깨졌거나 safetyStock 에 글자
-     *   - IllegalArgumentException            : Command 의 검증, 정렬 이름 오류 (우리 코드가 던짐)
+     *   - IllegalArgumentException            : Service 의 입력 검사, 정렬 이름 오류 (우리 코드가 던짐)
      */
     @ExceptionHandler({MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class,

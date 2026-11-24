@@ -3,11 +3,11 @@ package com.fixops.inventory.part.service;
 import com.fixops.inventory.part.exception.DuplicateSkuException;
 import com.fixops.inventory.part.exception.PartNotFoundException;
 import com.fixops.inventory.stock.exception.StockNotFoundException;
-import com.fixops.inventory.part.dto.PartCreateCommand;
+import com.fixops.inventory.part.dto.PartCreateRequest;
 import com.fixops.inventory.part.dto.PartPageResult;
 import com.fixops.inventory.part.dto.PartResult;
-import com.fixops.inventory.part.dto.PartSearchCommand;
-import com.fixops.inventory.part.dto.PartUpdateCommand;
+import com.fixops.inventory.part.dto.PartStatusFilter;
+import com.fixops.inventory.part.dto.PartUpdateRequest;
 import com.fixops.inventory.part.entity.Part;
 import com.fixops.inventory.stock.entity.StockBalance;
 import com.fixops.inventory.part.repository.PartRepository;
@@ -40,21 +40,29 @@ public class PartService {
      * 둘 중 하나라도 실패하면 둘 다 취소되어 "재고 행 없는 부품"이 생기지 않는다.
      */
     @Transactional
-    public PartResult create(PartCreateCommand c) {
+    public PartResult create(long organizationId, PartCreateRequest r) {
+        // 입력 정리: 앞뒤 공백 제거. " BOLT-M8" 과 "BOLT-M8" 이 서로 다른 SKU 로 등록되는 것을 막는다.
+        // (빈칸·길이 검사는 Controller 의 @Valid 가 이미 했다. 여기서는 다른 곳에서 불려도 안전하게 한 번 더 확인)
+        String sku = requireText(r.sku(), "sku");
+        String name = requireText(r.name(), "name");
+        if (r.safetyStock() != null && r.safetyStock() < 0) {
+            throw new IllegalArgumentException("safetyStock은 0 이상이어야 합니다.");
+        }
+
         // 1) 먼저 확인: 같은 조직에 같은 SKU가 있으면 기존 부품 정보와 함께 409
-        partRepository.findByOrganizationIdAndSku(c.organizationId(), c.sku())
+        partRepository.findByOrganizationIdAndSku(organizationId, sku)
                 .ifPresent(existing -> {
-                    throw new DuplicateSkuException(c.sku(), existing.getId(), existing.getStatus());
+                    throw new DuplicateSkuException(sku, existing.getId(), existing.getStatus());
                 });
 
         // 2) 부품 저장. saveAndFlush 로 바로 INSERT 해서, 동시에 같은 SKU가 들어오면 여기서 DB가 막는다.
         Part part;
         try {
             part = partRepository.saveAndFlush(Part.create(
-                    c.organizationId(), c.sku(), c.name(), c.category(), c.unit(), c.safetyStock()));
+                    organizationId, sku, name, r.category(), r.unit(), r.safetyStock()));
         } catch (DataIntegrityViolationException e) {
             // 1)의 확인을 동시에 통과한 두 요청 중 늦은 쪽. DB 의 uq_part_org_sku 가 막았다.
-            throw new DuplicateSkuException(c.sku(), null, null);
+            throw new DuplicateSkuException(sku, null, null);
         }
 
         // 3) 수량 0인 재고 행 저장
@@ -68,12 +76,14 @@ public class PartService {
      * readOnly = true : 조회만 하므로 변경 감지를 하지 않아 조금 가볍다.
      */
     @Transactional(readOnly = true)
-    public PartPageResult search(PartSearchCommand c, Pageable pageable) {
+    public PartPageResult search(long organizationId, String keyword, PartStatusFilter status,
+                                 boolean lowStockOnly, Pageable pageable) {
+        PartStatusFilter filter = (status == null) ? PartStatusFilter.ACTIVE : status;   // OpenAPI 기본값
         Page<PartResult> page = stockBalanceRepository.search(
-                        c.organizationId(),
-                        c.status().toStatusNames(),
-                        toKeywordPattern(c.keyword()),
-                        c.lowStockOnly(),
+                        organizationId,
+                        filter.toStatusNames(),
+                        toKeywordPattern(keyword),
+                        lowStockOnly,
                         pageable)
                 .map(PartResult::from);   // SQL 결과 한 줄(PartStockRow) → PartResult 로 하나씩 바꾼다
         return PartPageResult.from(page);
@@ -101,16 +111,34 @@ public class PartService {
      * 3) flush: 지금 바로 UPDATE 를 실행시킨다. 그래야 @PreUpdate 가 돌아 updatedAt 이 바뀐 값으로 응답된다.
      */
     @Transactional
-    public PartResult update(PartUpdateCommand c) {
-        Part part = partRepository.findByIdAndOrganizationId(c.partId(), c.organizationId())
-                .orElseThrow(() -> new PartNotFoundException(c.partId()));
+    public PartResult update(long organizationId, long partId, PartUpdateRequest r) {
+        // 입력 확인. null 은 "바꾸지 않음"이고, 최소 한 항목은 있어야 한다.
+        if (r.name() == null && r.category() == null && r.unit() == null && r.safetyStock() == null) {
+            throw new IllegalArgumentException("수정할 항목이 없습니다.");
+        }
+        String name = (r.name() == null) ? null : requireText(r.name(), "name");   // 보냈다면 빈칸 불가
+        String unit = (r.unit() == null) ? null : requireText(r.unit(), "unit");
+        if (r.safetyStock() != null && r.safetyStock() < 0) {
+            throw new IllegalArgumentException("safetyStock은 0 이상이어야 합니다.");
+        }
 
-        part.changeInfo(c.name(), c.category(), c.unit(), c.safetyStock());
+        Part part = partRepository.findByIdAndOrganizationId(partId, organizationId)
+                .orElseThrow(() -> new PartNotFoundException(partId));
+
+        part.changeInfo(name, r.category(), unit, r.safetyStock());
         partRepository.flush();
 
         StockBalance balance = stockBalanceRepository.findByPartId(part.getId())
                 .orElseThrow(() -> new StockNotFoundException("stock balance not found: partId=" + part.getId()));
         return PartResult.from(balance);
+    }
+
+    /** 비어 있으면 안 되는 글자 값: 공백이면 400(IllegalArgumentException), 아니면 앞뒤 공백을 지워 돌려준다. */
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + "은(는) 비워 둘 수 없습니다.");
+        }
+        return value.trim();
     }
 
     /** 검색어를 like 패턴으로 바꾼다. 없으면 "%"(전부 통과). */

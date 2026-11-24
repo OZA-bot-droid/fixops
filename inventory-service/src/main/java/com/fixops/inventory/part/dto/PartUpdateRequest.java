@@ -13,9 +13,4 @@ public record PartUpdateRequest(
         @Size(max = 200) String name,
         @Size(max = 64) String category,
         @Size(max = 16) String unit,
-        @PositiveOrZero Integer safetyStock) {
-
-    public PartUpdateCommand toCommand(long organizationId, long partId) {
-        return new PartUpdateCommand(organizationId, partId, name, category, unit, safetyStock);
-    }
-}
+        @PositiveOrZero Integer safetyStock) {}

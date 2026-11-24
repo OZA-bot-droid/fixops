@@ -17,9 +17,4 @@ public record ReceiptRequest(
         @NotNull @Positive Long partId,
         @NotNull @Min(1) Integer quantity,
         @NotBlank @Size(min = 8, max = 100) String operationKey,
-        @Size(max = 200) String note) {
-
-    public ReceiptCommand toCommand(long organizationId, long actorId) {
-        return new ReceiptCommand(organizationId, partId, quantity, operationKey, actorId, note);
-    }
-}
+        @Size(max = 200) String note) {}

@@ -15,10 +15,4 @@ public record PartCreateRequest(
         @NotBlank @Size(max = 200) String name,
         @Size(max = 64) String category,
         @Size(max = 16) String unit,
-        @PositiveOrZero Integer safetyStock) {
-
-    /** 요청 + 로그인한 사람의 단지 → Service 가 받는 Command 로 바꾼다. */
-    public PartCreateCommand toCommand(long organizationId) {
-        return new PartCreateCommand(organizationId, sku, name, category, unit, safetyStock);
-    }
-}
+        @PositiveOrZero Integer safetyStock) {}
