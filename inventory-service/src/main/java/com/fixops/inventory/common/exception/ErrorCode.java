@@ -15,6 +15,9 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다."),
     INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "재고가 부족합니다."),
     IDEMPOTENCY_KEY_REUSE(HttpStatus.CONFLICT, "같은 요청 키로 다른 내용을 보낼 수 없습니다."),
+
+    // docs/04 에 아직 없는 코드. 같은 단지에 같은 SKU 가 이미 있음 (docs/04 추가 요청 필요)
+    DUPLICATE_SKU(HttpStatus.CONFLICT, "이미 등록된 SKU입니다."),
     DEPENDENCY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "잠시 후 다시 시도해 주세요."),
 
     // docs/04 에 없는 코드. 예상하지 못한 서버 오류용 (팀장 확인 필요)

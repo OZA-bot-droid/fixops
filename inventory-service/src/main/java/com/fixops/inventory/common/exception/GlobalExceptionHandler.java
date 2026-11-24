@@ -72,10 +72,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 409: SKU 중복. 기존 부품 번호와 상태를 details 에 담아 "재활성화" 안내를 할 수 있게 한다.
-     *
-     * 코드: docs/04 에 SKU 중복용 409 코드가 없어서, 현재 OpenAPI 예시대로 INVALID_INPUT 을 쓴다.
-     *       HTTP 상태는 409 로 따로 지정한다. 팀장 답변을 받으면 이 메서드만 바꾸면 된다.
+     * 409: SKU 중복 (DUPLICATE_SKU). 기존 부품 번호와 상태를 details 에 담아
+     * 화면이 "숨겨진 같은 부품이 있습니다" 같은 안내를 할 수 있게 한다.
      */
     @ExceptionHandler(DuplicateSkuException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateSku(DuplicateSkuException e) {
@@ -84,8 +82,7 @@ public class GlobalExceptionHandler {
             details.put("partId", e.getExistingPartId());
             details.put("partStatus", e.getExistingStatus());
         }
-        return respond(HttpStatusCode.valueOf(409), ErrorCode.INVALID_INPUT.name(),
-                "이미 등록된 SKU입니다.", details, e);
+        return respond(ErrorCode.DUPLICATE_SKU, details, e);
     }
 
     // ===== 2. 입력값 오류 (400) =====
