@@ -15,7 +15,7 @@ import java.time.Instant;
 
 /**
  * 부품의 현재 재고. 부품 1개당 1행(part_id UNIQUE).
- * 수량 변경은 입고·사용을 통해서만 이뤄지며, 차감은 StockDeductionService가 SQL로 직접 처리한다.
+ * 수량 변경은 입고·사용을 통해서만 이뤄지며, 입고·차감은 StockService가 SQL로 직접 처리한다.
  */
 @Entity
 @Table(name = "stock_balance")
