@@ -18,10 +18,15 @@ info:
       - 부품 수정(PATCH)은 name, category, unit, safetyStock 만. sku, 수량, status 는 수정 불가.
       - 재고가 남은 부품은 비활성화하지 않는다. 
 
+    D7 결정 사항 (2026-11-24)
+      - 입고 메모(note)는 stock_movement.note 에 저장한다 (V2 마이그레이션).
+      - 비활성(INACTIVE) 부품에는 입고할 수 없다: 409 PART_INACTIVE (docs/04 추가 요청 필요).
+      - Idempotency-Key 헤더와 본문 operationKey 는 같은 값이어야 한다. 다르면 400.
+
     미결 항목 (확정되면 본 문서에 반영)
       1. 비활성 부품과 같은 SKU 등록 시 동작. 본 문서는 409 + 기존 partId 안내로 제안.
       2. 재고가 남은 부품의 비활성화 허용 여부. 본 문서에는 비활성화 API 미포함(P0 제외 제안).
-      3. usages의 Idempotency-Key 헤더와 본문 operationKey 관계. 본 문서는 "같은 값 필수"로 제안.
+      3. (D7 확정) Idempotency-Key 헤더와 본문 operationKey 는 같은 값 필수. 입고·사용 모두 적용.
       4. 목록 응답 형식(content/page/size/totalElements) 통일 - Asset, WorkOrder와 협의 중.
       5. WorkOrder 상태 조회 내부 API의 주소, 응답 필드, 서비스 간 인증 방식 - 박천보 협의 중.
       6. 재고 반환 API는 docs/04 필수 API 목록에 없음. 추가에 대한 팀장 승인 필요.
@@ -201,7 +206,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/OrgAccessDenied' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/IdempotencyKeyReuse' }
+        '409':
+          description: |
+            IDEMPOTENCY_KEY_REUSE : 같은 operationKey 로 다른 내용(부품·수량)을 보냄.
+            PART_INACTIVE         : 비활성 부품에는 입고할 수 없음.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
   /inventory/usages:
     post:
@@ -318,7 +329,7 @@ components:
       required: true
       description: |
         중복 생성을 막는 키. 단일성은 organization_id + actor_id + operation + key 조합으로 본다. (docs/04)
-        usages에서는 본문 operationKey와 같은 값이어야 하며, 다르면 400으로 거부한다. (D5 협의 항목 6)
+        receipts, usages 에서는 본문 operationKey 와 같은 값이어야 하며, 다르면 400 으로 거부한다. (D7 확정)
       schema: { type: string, minLength: 8, maxLength: 100 }
 
   schemas:
@@ -348,6 +359,7 @@ components:
                 - INSUFFICIENT_STOCK
                 - IDEMPOTENCY_KEY_REUSE
                 - DUPLICATE_SKU
+                - PART_INACTIVE
                 - RATE_LIMITED
                 - DEPENDENCY_UNAVAILABLE
             message: { type: string }
@@ -412,7 +424,7 @@ components:
         partId: { type: integer, format: int64 }
         quantity: { type: integer, minimum: 1 }
         operationKey: { type: string, minLength: 8, maxLength: 100 }
-        note: { type: string, maxLength: 200 }
+        note: { type: string, maxLength: 200, description: 입고 메모. stock_movement.note 에 저장 }
 
     UsageRequest:
       type: object
