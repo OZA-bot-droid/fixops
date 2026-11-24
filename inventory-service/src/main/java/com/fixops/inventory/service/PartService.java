@@ -7,6 +7,7 @@ import com.fixops.inventory.dto.PartCreateCommand;
 import com.fixops.inventory.dto.PartPageResult;
 import com.fixops.inventory.dto.PartResult;
 import com.fixops.inventory.dto.PartSearchCommand;
+import com.fixops.inventory.dto.PartUpdateCommand;
 import com.fixops.inventory.entity.Part;
 import com.fixops.inventory.entity.StockBalance;
 import com.fixops.inventory.repository.PartRepository;
@@ -19,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 부품 기준 정보 (등록, 목록 조회, 단건 조회).
- * 수정(PATCH)은 팀장 협의 후 추가한다. 재고 수량은 여기서 바꾸지 않는다 (입고·사용 API로만 변경).
+ * 재고 수량과 SKU 는 여기서 바꾸지 않는다 (수량은 입고·사용 API로만 변경).
  */
 @Service
 public class PartService {
@@ -88,6 +89,27 @@ public class PartService {
                 .orElseThrow(() -> new PartNotFoundException(partId));
         StockBalance balance = stockBalanceRepository.findByPartId(part.getId())
                 .orElseThrow(() -> new StockNotFoundException("stock balance not found: partId=" + partId));
+        return PartResult.from(balance);
+    }
+
+    /**
+     * 부품 정보 수정 (name, category, unit, safetyStock).
+     *
+     * 1) 우리 단지 부품인지 확인하며 가져온다 (다른 단지 부품이면 404)
+     * 2) Entity 의 changeInfo 로 값만 바꾼다. save() 를 부르지 않아도
+     *    JPA 가 DB 에서 읽어 온 객체를 지켜보고 있다가 UPDATE 한다 (변경 감지).
+     * 3) flush: 지금 바로 UPDATE 를 실행시킨다. 그래야 @PreUpdate 가 돌아 updatedAt 이 바뀐 값으로 응답된다.
+     */
+    @Transactional
+    public PartResult update(PartUpdateCommand c) {
+        Part part = partRepository.findByIdAndOrganizationId(c.partId(), c.organizationId())
+                .orElseThrow(() -> new PartNotFoundException(c.partId()));
+
+        part.changeInfo(c.name(), c.category(), c.unit(), c.safetyStock());
+        partRepository.flush();
+
+        StockBalance balance = stockBalanceRepository.findByPartId(part.getId())
+                .orElseThrow(() -> new StockNotFoundException("stock balance not found: partId=" + part.getId()));
         return PartResult.from(balance);
     }
 

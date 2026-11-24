@@ -12,6 +12,12 @@ info:
       - 작업 취소 시 재고 반환은 WorkOrder 서비스가 Inventory 반환 API를 호출한다.
         반환용 멱등 키는 차감 키 앞에 'return-' 접두사를 붙인다.
 
+    D6 결정 사항 (2026-11-24)
+      - SKU 중복은 409 DUPLICATE_SKU (docs/04 추가 요청 필요). details 에 기존 partId, partStatus.
+      - 목록 정렬 허용 필드는 sku, name, quantity.
+      - 부품 수정(PATCH)은 name, category, unit, safetyStock 만. sku, 수량, status 는 수정 불가.
+      - 재고가 남은 부품은 비활성화하지 않는다. 
+
     미결 항목 (확정되면 본 문서에 반영)
       1. 비활성 부품과 같은 SKU 등록 시 동작. 본 문서는 409 + 기존 partId 안내로 제안.
       2. 재고가 남은 부품의 비활성화 허용 여부. 본 문서에는 비활성화 API 미포함(P0 제외 제안).
@@ -115,11 +121,45 @@ paths:
                   value:
                     success: false
                     error:
-                      code: INVALID_INPUT
+                      code: DUPLICATE_SKU
                       message: "이미 등록된 SKU입니다."
                       details: { partId: 92, partStatus: INACTIVE }
                     traceId: trace-id-example
                     timestamp: '2026-11-20T04:00:00Z'
+
+  /inventory/parts/{partId}:
+    patch:
+      tags: [parts]
+      summary: 부품 정보 수정
+      description: |
+        ADMIN만 호출한다. 보낸 항목만 바꾼다(최소 1개). sku, 재고 수량, status 는 바꿀 수 없다.
+        다른 조직의 부품이면 404.
+      operationId: updatePart
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartUpdateRequest' }
+      responses:
+        '200':
+          description: 수정 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Part' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /inventory/receipts:
     post:
@@ -268,7 +308,9 @@ components:
     Sort:
       name: sort
       in: query
-      description: '필드,방향 (예: sku,asc)'
+      description: |
+        필드,방향 (예: sku,asc). 허용 필드: sku, name, quantity. 방향: asc, desc (생략 시 asc).
+        그 외 필드는 400 INVALID_INPUT.
       schema: { type: string, default: 'sku,asc' }
     IdempotencyKey:
       name: Idempotency-Key
@@ -305,6 +347,7 @@ components:
                 - RESOURCE_NOT_FOUND
                 - INSUFFICIENT_STOCK
                 - IDEMPOTENCY_KEY_REUSE
+                - DUPLICATE_SKU
                 - RATE_LIMITED
                 - DEPENDENCY_UNAVAILABLE
             message: { type: string }
@@ -351,6 +394,16 @@ components:
         category: { type: string, maxLength: 64 }
         unit: { type: string, maxLength: 16, default: EA }
         safetyStock: { type: integer, minimum: 0, default: 0 }
+
+    PartUpdateRequest:
+      type: object
+      minProperties: 1
+      description: sku, quantity, status 를 보내도 무시된다.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        category: { type: string, maxLength: 64 }
+        unit: { type: string, minLength: 1, maxLength: 16 }
+        safetyStock: { type: integer, minimum: 0 }
 
     ReceiptRequest:
       type: object

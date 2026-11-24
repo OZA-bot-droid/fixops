@@ -76,6 +76,27 @@ public class Part {
         return new Part(organizationId, sku, name, category, unit, safetyStock);
     }
 
+//  수정에 관련 메서드
+    /**
+     * 부품 정보 수정. null 로 넘긴 항목은 바꾸지 않는다 (PATCH: 보낸 것만 바꿈).
+     * sku, organizationId, status, 재고 수량은 여기서 바꿀 수 없다.
+     * 값만 바꾸면 트랜잭션이 끝날 때 JPA 가 알아서 UPDATE 한다 (변경 감지).
+     */
+    public void changeInfo(String name, String category, String unit, Integer safetyStock) {
+        if (name != null) {
+            this.name = name;
+        }
+        if (category != null) {
+            this.category = category;
+        }
+        if (unit != null) {
+            this.unit = unit;
+        }
+        if (safetyStock != null) {
+            this.safetyStock = safetyStock;
+        }
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

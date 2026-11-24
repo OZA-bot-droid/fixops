@@ -8,10 +8,12 @@ import com.fixops.inventory.dto.PartPageResult;
 import com.fixops.inventory.dto.PartResult;
 import com.fixops.inventory.dto.PartSearchCommand;
 import com.fixops.inventory.dto.PartStatusFilter;
+import com.fixops.inventory.dto.PartUpdateRequest;
 import com.fixops.inventory.service.PartService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.net.URI;
 import java.util.Set;
@@ -21,6 +23,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -29,7 +33,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 부품 API 입구 (OpenAPI: GET/POST /api/inventory/parts).
+ * 부품 API 입구 (OpenAPI: GET/POST /api/inventory/parts, PATCH /api/inventory/parts/{partId}).
  *
  * [주소가 /inventory/parts 인 이유]
  *   Gateway 가 /api/inventory/** 를 받아 앞의 /api 를 떼고(stripPrefix(1)) 여기로 넘긴다.
@@ -103,6 +107,26 @@ public class PartController {
         return ResponseEntity
                 .created(URI.create("/api/inventory/parts/" + created.id()))   // 201 + Location 헤더
                 .body(ApiResponse.ok(created));
+    }
+
+    /**
+     * 부품 정보 수정 (ADMIN 만). 보낸 항목만 바꾼다.
+     * 예) PATCH /api/inventory/parts/92   본문 {"safetyStock": 30}
+     *
+     * PATCH 인 이유: 일부만 바꾸기 때문. (PUT 은 "전체를 이 내용으로 교체"라는 뜻)
+     * {partId} : URL 경로의 한 칸. @PathVariable 로 꺼낸다 (? 뒤의 @RequestParam 과 다름).
+     */
+    @PatchMapping("/{partId}")
+    public ApiResponse<PartResult> update(
+            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
+            @PathVariable @Positive long partId,
+            @Valid @RequestBody PartUpdateRequest request) {
+
+        CurrentMember member = authorization.requireAdmin(memberId, role, organizationId);
+
+        return ApiResponse.ok(partService.update(request.toCommand(member.organizationId(), partId)));   // 200
     }
 
     /** "name,asc" → Sort. 허용하지 않은 이름이나 방향이면 400 이 되도록 IllegalArgumentException. */
