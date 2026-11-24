@@ -19,10 +19,12 @@ import lombok.NoArgsConstructor;
 public class WorkOrderSaveDTO {
 
     // 신고 ID (관리자 직접 등록 시 null)
+    @Positive
     private Long reportId;
 
     // 조직 ID
     @NotNull
+    @Positive
     private Long organizationId;
 
     // 작업지시 제목
@@ -35,18 +37,22 @@ public class WorkOrderSaveDTO {
 
     // 단지 ID
     @NotNull
+    @Positive
     private Long complexId;
 
     // 장소 ID
     @NotNull
+    @Positive
     private Long locationId;
 
     // 설비 ID
+    @Positive
     private Long assetId;
 
     // 우선순위
     private WorkOrderPriority priority;
 
     // 연관 작업지시 ID
+    @Positive
     private Long relatedWorkOrderId;
 }

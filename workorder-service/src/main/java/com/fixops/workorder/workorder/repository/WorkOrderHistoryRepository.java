@@ -9,4 +9,7 @@ public interface WorkOrderHistoryRepository extends JpaRepository<WorkOrderHisto
 
     // 작업지시 상태 변경 이력 (최신순)
     List<WorkOrderHistory> findByWorkOrderIdOrderByCreatedAtDescIdDesc(Long workOrderId);
+
+    // 작업지시 상태 변경 이력 (과거순)
+    List<WorkOrderHistory> findByWorkOrderIdOrderByCreatedAtAscIdAsc(Long workOrderId);
 }

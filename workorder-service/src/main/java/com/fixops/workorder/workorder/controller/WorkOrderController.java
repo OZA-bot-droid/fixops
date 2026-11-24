@@ -43,8 +43,8 @@ public class WorkOrderController {
 
     // 작업지시 상세 조회
     @GetMapping("/{id}")
-    public ResponseEntity<?> getWorkOrder(@PathVariable Long id, @RequestHeader("X-Member-Id") Long userId, @RequestParam Long organizationId) {
-        return ResponseEntity.ok(ApiResponse.success(workOrderService.getWorkOrder(id, userId, organizationId)));
+    public ResponseEntity<?> getWorkOrder(@PathVariable Long id, @RequestHeader("X-Member-Id") Long userId) {
+        return ResponseEntity.ok(ApiResponse.success(workOrderService.getWorkOrder(id, userId)));
     }
 
     // 작업자 배정/재배정

@@ -65,9 +65,8 @@ public class ReportController {
 
     // 관리자 - 신고 상세 조회
     @GetMapping("/report/{reportId}")
-    public ResponseEntity<ApiResponse<ReportResponseDTO>> getAdminReportDetail(@PathVariable Long reportId, @RequestHeader("X-Member-Id") Long userId,
-                                                                               @RequestParam Long organizationId) {
-        return ResponseEntity.ok(ApiResponse.success(reportService.getAdminReportDetail(reportId, userId, organizationId)));
+    public ResponseEntity<ApiResponse<ReportResponseDTO>> getAdminReportDetail(@PathVariable Long reportId, @RequestHeader("X-Member-Id") Long userId) {
+        return ResponseEntity.ok(ApiResponse.success(reportService.getAdminReportDetail(reportId, userId)));
     }
 
     // 관리자 - 신고 반려

@@ -30,23 +30,22 @@ public class ReportService {
     private final ReportRepository reportRepository;
 
     // 유저 신고 등록
-    public Report createReport(ReportSaveDTO reportSaveDTO, Long userId) {
+    public ReportResponseDTO createReport(ReportSaveDTO reportSaveDTO, Long userId) {
 
         // dto 값 검증 및 권한 검증
         validateCreateReport(reportSaveDTO, userId);
 
-
         Report report = reportSaveDTO.toEntity(userId);
 
-        return reportRepository.save(report);
+        Report saved = reportRepository.save(report);
+
+        return ReportResponseDTO.fromEntity(saved);
     }
 
     // 유저 신고 조회
     @Transactional(readOnly = true)
     public Page<Report> getMyReport(Long userId, String title, String status, int page, int size) {
-        if (userId == null) {
-            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
-        }
+        validateUserId(userId);
 
         // 1. 페이지 검증
         if (page < 0 || size < 1 || size > 100) {
@@ -92,32 +91,45 @@ public class ReportService {
     }
 
     // 신고 수정
-    public Report updateReport(Long reportId, ReportUpdateDTO dto, Long userId) {
-        // 본인 신고 + REPORTED 상태 검사
-        Report report = validateEditableReport(reportId, userId);
+    public ReportResponseDTO updateReport(Long reportId, ReportUpdateDTO dto, Long userId) {
+        // 1. 사용자 및 신고 ID 검증
+        validateUserId(userId);
+        validateId(reportId);
 
-        // 회원·조직·단지 검증
-        validateMember(userId, report.getOrganizationId(), report.getComplexId());
+        // 2. DTO null 검증
+        if (dto == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
 
-        // 수정할 DTO 검증
+        // 3. DTO 입력값 검증
         validateReportFields(dto.getLocationId(), dto.getTitle());
 
-        // 장소 검증
+        // 4. 수정 가능한 신고인지 확인 및 비관적 락 획득
+        Report report = validateEditableReport(reportId, userId);
+
+        // 5. 장소 소속 검증
         validateReportLocation(report.getOrganizationId(), report.getComplexId(), dto.getLocationId(), userId);
 
+        // 6. 신고 수정
         report.updateReport(dto.getLocationId(), dto.getTitle(), dto.getDescription());
 
-        return report;
+        // 7. 변경사항 DB 반영
+        reportRepository.flush();
+
+        // 8. DTO 반환
+        return ReportResponseDTO.fromEntity(report);
     }
 
     // 신고 취소
-    public Report cancelReport(Long reportId, Long userId) {
-
+    public ReportResponseDTO cancelReport(Long reportId, Long userId) {
         Report report = validateEditableReport(reportId, userId);
 
         report.changeStatus(ReportStatus.CANCELLED);
 
-        return report;
+        // flush 호출 - DTO로 변환하는 시점에 최신 updatedAt 값을 포함하기 위해 사용.
+        reportRepository.flush();
+
+        return ReportResponseDTO.fromEntity(report);
     }
 
     // 관리자 신고 목록 조회
@@ -204,16 +216,17 @@ public class ReportService {
 
     // 관리자 신고 상세 조회
     @Transactional(readOnly = true)
-    public ReportResponseDTO getAdminReportDetail(Long reportId, Long userId, Long organizationId) {
+    public ReportResponseDTO getAdminReportDetail(Long reportId, Long userId) {
         validateUserId(userId);
         validateId(reportId);
-        validateId(organizationId);
 
-        Report report = reportRepository.findByIdAndOrganizationId(reportId, organizationId).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        Report report = reportRepository.findById(reportId).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
+        // TODO: Member 연동
         // TODO: ADMIN 역할 검증
         // TODO: 해당 조직 소속 검증
-        // TODO: report.getComplexId() 접근 권한 검증
+        // report.getOrganizationId() 기준 조직 접근 권한 검증
+        // report.getComplexId() 기준 단지 접근 권한 검증
 
         return ReportResponseDTO.fromEntity(report);
     }

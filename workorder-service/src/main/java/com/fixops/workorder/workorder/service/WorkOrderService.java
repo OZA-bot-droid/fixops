@@ -127,14 +127,10 @@ public class WorkOrderService {
 
     // 작업지시 상세 조회
     @Transactional(readOnly = true)
-    public WorkOrderResponseDTO getWorkOrder(Long id, Long userId, Long organizationId) {
+    public WorkOrderResponseDTO getWorkOrder(Long id, Long userId) {
         validateUserId(userId);
 
-        if (id == null || id <= 0 || organizationId == null || organizationId <= 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-
-        WorkOrder workOrder = workOrderRepository.findByIdAndOrganizationId(id, organizationId).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        WorkOrder workOrder = findWorkOrder(id);
 
         // TODO: 요청자의 조직·단지 접근 권한 검증
         // TODO: TECHNICIAN의 경우 본인 배정 작업인지 검증
@@ -216,7 +212,7 @@ public class WorkOrderService {
         validateUserId(userId);
         WorkOrder workOrder = findWorkOrder(id);
         // TODO: Member 연동 - 해당 작업지시 이력 조회 권한 검증
-        return workOrderHistoryRepository.findByWorkOrderIdOrderByCreatedAtDescIdDesc(workOrder.getId()).stream().map(WorkOrderHistoryResponseDTO::fromEntity).toList();
+        return workOrderHistoryRepository.findByWorkOrderIdOrderByCreatedAtAscIdAsc(workOrder.getId()).stream().map(WorkOrderHistoryResponseDTO::fromEntity).toList();
     }
 
     // 상태 동기화 용
