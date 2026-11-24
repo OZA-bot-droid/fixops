@@ -11,8 +11,8 @@ import java.util.*;
 @Service
 public class OrganizationService {
  @Value("${fixops.demo.building-approval-bypass:false}") private boolean demoBuildingApproval;
- private final OrganizationRepository orgs;private final OrganizationMemberRepository memberships;private final MemberRepository members;private final AuditLogRepository audit;
- public OrganizationService(OrganizationRepository o,OrganizationMemberRepository om,MemberRepository m,AuditLogRepository a){orgs=o;memberships=om;members=m;audit=a;}
+ private final OrganizationRepository orgs;private final OrganizationMemberRepository memberships;private final MemberRepository members;private final AuditLogRepository audit; private final AuthService auth;
+ public OrganizationService(OrganizationRepository o,OrganizationMemberRepository om,MemberRepository m,AuditLogRepository a,AuthService auth){orgs=o;memberships=om;members=m;audit=a;this.auth=auth;}
  @Transactional public Organization apply(Long memberId,String name,String kind){
   Member member=members.findById(memberId).orElseThrow(()->new ResponseStatusException(HttpStatus.UNAUTHORIZED));
   if(!member.emailVerified) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"EMAIL_VERIFICATION_REQUIRED");
@@ -30,6 +30,8 @@ public class OrganizationService {
   org.status=approve?"ACTIVE":"REJECTED";org.reviewReason=reason;org.reviewedBy=platformAdminId;org.reviewedAt=Instant.now();
   if(approve && !memberships.existsByOrganizationIdAndMemberId(org.id,org.applicantId)) memberships.save(new OrganizationMember(org.id,org.applicantId,"ADMIN"));
   audit.save(new AuditLog(platformAdminId,approve?"ORGANIZATION_APPROVE":"ORGANIZATION_REJECT","organization",org.id.toString()));
+  // Newly granted ADMIN scope must not be interpreted from an older JWT.
+  if (approve) auth.logoutAll(org.applicantId);
   return orgs.save(org);
  }
  public List<Organization> pending(Long requesterId){if(!isAdmin(requesterId))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"PLATFORM_ADMIN_REQUIRED");return orgs.findByStatusOrderByCreatedAtAsc("PENDING_APPROVAL");}

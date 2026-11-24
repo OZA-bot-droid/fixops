@@ -17,6 +17,10 @@ public class AuthController {
  }
  @PostMapping("/login") public Map<String,Object> login(@Valid @RequestBody Login req){return Api.ok(auth.login(req.email(),req.password()));}
  @PostMapping("/refresh") public Map<String,Object> refresh(@Valid @RequestBody Refresh req){return Api.ok(auth.refresh(req.refreshToken()));}
- @PostMapping("/logout") public Map<String,Object> logout(@Valid @RequestBody Refresh req,JwtAuthenticationToken user){auth.logout(req.refreshToken());return Api.ok(Map.of("loggedOut",true));}
+ @PostMapping("/logout") public Map<String,Object> logout(@Valid @RequestBody Refresh req,JwtAuthenticationToken user){auth.logout(Long.valueOf(user.getName()),UUID.fromString(user.getToken().getClaimAsString("sid")),req.refreshToken());return Api.ok(Map.of("loggedOut",true));}
+ @PostMapping("/logout-all") public Map<String,Object> logoutAll(JwtAuthenticationToken user) {
+  auth.logoutAll(Long.valueOf(user.getName()));
+  return Api.ok(Map.of("loggedOutAll",true));
+ }
  @GetMapping("/me") public Map<String,Object> me(JwtAuthenticationToken user){return Api.ok(Map.of("id",Long.parseLong(user.getName()),"email",user.getToken().getClaimAsString("email"),"platformAdmin",Boolean.TRUE.equals(user.getToken().getClaim("platform_admin")),"memberships",user.getToken().getClaim("memberships")));}
 }

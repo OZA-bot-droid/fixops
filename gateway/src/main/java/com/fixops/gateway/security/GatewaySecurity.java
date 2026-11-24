@@ -18,10 +18,10 @@ public class GatewaySecurity {
    return jwt.getAudience().contains(audience)?OAuth2TokenValidatorResult.success():OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token","Invalid audience",null));});
   return decoder;
  }
- @Bean SecurityWebFilterChain security(ServerHttpSecurity http){
+ @Bean SecurityWebFilterChain security(ServerHttpSecurity http, SessionAuthorizationManager manager){
   return http.csrf(ServerHttpSecurity.CsrfSpec::disable)
    .authorizeExchange(ex->ex.pathMatchers(HttpMethod.POST,"/api/members/signup","/api/members/login","/api/members/refresh").permitAll()
-    .pathMatchers("/actuator/health","/actuator/info").permitAll().anyExchange().authenticated())
+    .pathMatchers("/actuator/health","/actuator/info").permitAll().anyExchange().access(manager))
    .oauth2ResourceServer(o->o.jwt(j->{})).build();
  }
 }
