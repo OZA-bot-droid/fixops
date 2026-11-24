@@ -24,6 +24,10 @@
     {
       "key": "partId",
       "value": ""
+    },
+    {
+      "key": "receiptKey",
+      "value": ""
     }
   ],
   "item": [
@@ -1092,6 +1096,445 @@
                 }
               }
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. 입고 (POST /receipts)",
+      "description": "D7. 1번 폴더의 '01 등록 성공'을 먼저 실행해 partId 가 있어야 한다. 41 → 42 → 43 → 44 순서로 실행.\n비활성 부품 입고(409 PART_INACTIVE)는 아직 비활성화 API 가 없어 여기서 시험할 수 없다.",
+      "item": [
+        {
+          "name": "41 입고 성공 → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{receiptKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": {{partId}},\n  \"quantity\": 50,\n  \"operationKey\": \"{{receiptKey}}\",\n  \"note\": \"11월 정기 입고\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "01 에서 만든 부품에 50개 입고. 응답의 quantityDelta 50, remainingQuantity 50 (처음이면).\n실행할 때마다 새 키(receiptKey)를 만든다."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 실행할 때마다 새 멱등 키를 만든다. 42~44 는 이 키를 그대로 다시 쓴다.",
+                  "pm.collectionVariables.set('receiptKey', 'receipt-' + Date.now());"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "42 같은 키로 재시도 → 200 (추가 입고 없음)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{receiptKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": {{partId}},\n  \"quantity\": 50,\n  \"operationKey\": \"{{receiptKey}}\",\n  \"note\": \"11월 정기 입고\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "41 직후 그대로 다시 보냄. 201 이 아니라 200, movementId 가 41 과 같고 수량이 더 늘지 않아야 한다."
+          }
+        },
+        {
+          "name": "43 같은 키·다른 수량 → 409 IDEMPOTENCY_KEY_REUSE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{receiptKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": {{partId}},\n  \"quantity\": 99,\n  \"operationKey\": \"{{receiptKey}}\",\n  \"note\": \"11월 정기 입고\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "41 의 키로 수량만 99 로 바꿈."
+          }
+        },
+        {
+          "name": "44 헤더 키 ≠ 본문 키 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{receiptKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": {{partId}},\n  \"quantity\": 50,\n  \"operationKey\": \"receipt-different-key\",\n  \"note\": \"11월 정기 입고\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Idempotency-Key 와 operationKey 가 다름."
+          }
+        },
+        {
+          "name": "45 수량 0 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "receipt-qty0-check"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": {{partId}},\n  \"quantity\": 0,\n  \"operationKey\": \"receipt-qty0-check\",\n  \"note\": \"11월 정기 입고\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "@Min(1) 검증."
+          }
+        },
+        {
+          "name": "46 없는 부품 → 404 RESOURCE_NOT_FOUND",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "receipt-nopart-check"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": 999999,\n  \"quantity\": 5,\n  \"operationKey\": \"receipt-nopart-check\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "없는 partId."
+          }
+        },
+        {
+          "name": "47 다른 단지에서 입고 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "999"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "receipt-otherorg-check"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": {{partId}},\n  \"quantity\": 50,\n  \"operationKey\": \"receipt-otherorg-check\",\n  \"note\": \"11월 정기 입고\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "X-Org-Id 999. 남의 단지 부품은 '없음'으로 답해야 한다."
+          }
+        },
+        {
+          "name": "48 TECHNICIAN 이 입고 → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "TECHNICIAN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{receiptKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/receipts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "receipts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partId\": {{partId}},\n  \"quantity\": 50,\n  \"operationKey\": \"{{receiptKey}}\",\n  \"note\": \"11월 정기 입고\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "입고는 ADMIN 만."
+          }
+        },
+        {
+          "name": "49 입고 후 목록 확인 → 200 (수량 반영)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?q={{sku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{sku}}"
+                }
+              ]
+            },
+            "description": "01 에서 만든 부품의 quantity 가 입고한 만큼 늘었는지 확인. 42 재시도로는 늘지 않아야 한다."
           }
         }
       ]
