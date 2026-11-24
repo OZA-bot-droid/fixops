@@ -1,13 +1,13 @@
 package com.fixops.inventory.service;
 
-import com.fixops.inventory.common.exception.DuplicateSkuException;
-import com.fixops.inventory.common.exception.PartNotFoundException;
-import com.fixops.inventory.common.exception.StockNotFoundException;
-import com.fixops.inventory.dto.PartCreateCommand;
-import com.fixops.inventory.dto.PartPageResult;
-import com.fixops.inventory.dto.PartResult;
-import com.fixops.inventory.dto.PartSearchCommand;
-import com.fixops.inventory.dto.PartUpdateCommand;
+import com.fixops.inventory.common.exception.part.DuplicateSkuException;
+import com.fixops.inventory.common.exception.part.PartNotFoundException;
+import com.fixops.inventory.common.exception.stock.StockNotFoundException;
+import com.fixops.inventory.dto.part.PartCreateCommand;
+import com.fixops.inventory.dto.part.PartPageResult;
+import com.fixops.inventory.dto.part.PartResult;
+import com.fixops.inventory.dto.part.PartSearchCommand;
+import com.fixops.inventory.dto.part.PartUpdateCommand;
 import com.fixops.inventory.entity.Part;
 import com.fixops.inventory.entity.StockBalance;
 import com.fixops.inventory.repository.PartRepository;

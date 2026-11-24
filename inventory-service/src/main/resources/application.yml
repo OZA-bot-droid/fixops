@@ -1,22 +1,26 @@
+# inventory-service 설정
+# ${이름:기본값} : 환경 변수가 있으면 그 값을, 없으면 콜론 뒤 기본값을 쓴다 (로컬 개발은 기본값으로 동작).
+
 server:
-  port: ${PORT:8084}
+  port: ${PORT:8084}          # 이 서비스의 포트. Gateway(8080)가 /api/inventory/** 를 여기로 넘긴다
 spring:
   application:
     name: inventory-service
-  datasource:
+  datasource:                 # 접속할 DB (서비스마다 DB 를 따로 쓴다: inventory_db)
     url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/inventory_db}
     username: ${DB_USER:inventory_app}
-    password: ${DB_PASSWORD:}
+    password: ${DB_PASSWORD:}   # 비밀번호는 파일에 적지 않고 .env 의 값을 환경 변수로 받는다
   jpa:
-    open-in-view: false
+    open-in-view: false       # 화면 응답을 만드는 동안 DB 연결을 붙잡아 두지 않는다 (트랜잭션은 Service 안에서만)
     hibernate:
-      ddl-auto: validate
+      ddl-auto: validate      # 테이블을 만들거나 고치지 않고, Entity 와 테이블이 맞는지 검사만 한다
+                              # (테이블은 Flyway 가 만든다. 다르면 서버가 시작하지 않는다)
   flyway:
-    enabled: true
-    baseline-on-migrate: false
+    enabled: true             # 시작할 때 db/migration 의 V1, V2 ... 중 아직 적용 안 된 것을 순서대로 적용
+    baseline-on-migrate: false  # 기록 없는 기존 DB 를 "이미 적용됨"으로 치지 않는다 (잘못된 테이블을 숨기지 않기 위해)
     locations: classpath:db/migration
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info  # /actuator/health 로 서버가 살아 있는지 확인 (Postman "0. 서버 확인")

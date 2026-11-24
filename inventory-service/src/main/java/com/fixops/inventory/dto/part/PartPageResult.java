@@ -1,4 +1,4 @@
-package com.fixops.inventory.dto;
+package com.fixops.inventory.dto.part;
 
 import java.util.List;
 import org.springframework.data.domain.Page;

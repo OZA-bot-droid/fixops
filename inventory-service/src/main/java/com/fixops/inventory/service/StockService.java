@@ -1,14 +1,14 @@
 package com.fixops.inventory.service;
 
-import com.fixops.inventory.dto.DeductCommand;
-import com.fixops.inventory.dto.DeductResult;
-import com.fixops.inventory.dto.ReceiptCommand;
-import com.fixops.inventory.dto.StockChangeResult;
-import com.fixops.inventory.common.exception.IdempotencyKeyReuseException;
-import com.fixops.inventory.common.exception.InsufficientStockException;
-import com.fixops.inventory.common.exception.PartInactiveException;
-import com.fixops.inventory.common.exception.PartNotFoundException;
-import com.fixops.inventory.common.exception.StockNotFoundException;
+import com.fixops.inventory.dto.stock.DeductCommand;
+import com.fixops.inventory.dto.stock.DeductResult;
+import com.fixops.inventory.dto.stock.ReceiptCommand;
+import com.fixops.inventory.dto.stock.StockChangeResult;
+import com.fixops.inventory.common.exception.stock.IdempotencyKeyReuseException;
+import com.fixops.inventory.common.exception.stock.InsufficientStockException;
+import com.fixops.inventory.common.exception.part.PartInactiveException;
+import com.fixops.inventory.common.exception.part.PartNotFoundException;
+import com.fixops.inventory.common.exception.stock.StockNotFoundException;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -137,7 +137,15 @@ public class StockService {
 
     // ================= 차감 (D4~D5) =================
 
-    /** 잔액 행을 잠근 뒤 중복 여부와 재고를 확인하고 차감한다. */
+    /**
+     * 잔액 행을 잠근 뒤 중복 여부와 재고를 확인하고 차감한다.
+     *
+     * 순서 : 잠금 → 중복 확인 → 재고 확인 → 차감 → 사용 기록(part_usage) → 원장(stock_movement)
+     *
+     * TODO(D8): 지금은 part_id 만으로 잠가서 단지 번호를 확인하지 않는다.
+     *           다른 단지의 부품 번호를 넣으면 남의 재고를 차감할 수 있다. 입고(receive)처럼 part 와 JOIN 해서
+     *           organization_id 를 함께 확인하도록 고친다.
+     */
     public DeductResult deductWithLock(DeductCommand c) {
         return tx.execute(status -> {
             List<Integer> locked = jdbc.queryForList(
@@ -151,19 +159,26 @@ public class StockService {
             if (replay != null) {
                 return replay;
             }
+            // 재고 확인. 잠근 뒤에 읽은 값이라 그 사이에 다른 요청이 수량을 바꿀 수 없다.
             int current = locked.get(0);
             if (current < c.quantity()) {
                 throw new InsufficientStockException(
                         "insufficient stock: partId=" + c.partId() + ", requested=" + c.quantity());
             }
+            // 차감. version 도 함께 올려서, JPA 로 같은 행을 수정하던 쪽이 충돌을 알아채게 한다.
             jdbc.update("UPDATE stock_balance SET quantity = quantity - ?, version = version + 1, "
                     + "updated_at = now() WHERE part_id = ?", c.quantity(), c.partId());
+            // 어느 작업에서 썼는지(part_usage)와 재고 거래 내역(stock_movement)을 둘 다 남긴다.
             long usageId = insertUsage(c);
             insertMovement(c);
             return new DeductResult(usageId, current - c.quantity(), false);
         });
     }
 
+    /**
+     * 같은 키의 사용 기록이 있으면 그 결과를 돌려준다. 부품·수량·작업 중 하나라도 다르면 409.
+     * remaining 은 지금 수량이다 (기록에 그때의 잔액이 저장되어 있지 않다).
+     */
     private DeductResult replayIfExists(DeductCommand c) {
         List<DeductResult> found = jdbc.query(
                 "SELECT u.id, u.part_id, u.quantity, u.work_order_id, "
@@ -183,6 +198,7 @@ public class StockService {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    // 작업별 부품 사용 기록. RETURNING id: INSERT 하면서 새로 붙은 번호를 바로 돌려받는다.
     private long insertUsage(DeductCommand c) {
         Long id = jdbc.queryForObject(
                 "INSERT INTO part_usage (organization_id, work_order_id, part_id, quantity, operation_key) "
@@ -191,6 +207,7 @@ public class StockService {
         return id;
     }
 
+    // 원장 기록. 사용은 재고가 줄어드는 것이므로 quantity_delta 를 음수(-quantity)로 적는다.
     private void insertMovement(DeductCommand c) {
         jdbc.update("INSERT INTO stock_movement (organization_id, part_id, movement_type, quantity_delta, "
                         + "work_order_id, operation_key, created_by) VALUES (?, ?, 'USAGE', ?, ?, ?, ?)",

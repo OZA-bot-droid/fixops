@@ -1,5 +1,13 @@
 package com.fixops.inventory.common.exception;
 
+import com.fixops.inventory.common.exception.auth.OrgAccessDeniedException;
+import com.fixops.inventory.common.exception.auth.UnauthenticatedException;
+import com.fixops.inventory.common.exception.part.DuplicateSkuException;
+import com.fixops.inventory.common.exception.part.PartInactiveException;
+import com.fixops.inventory.common.exception.part.PartNotFoundException;
+import com.fixops.inventory.common.exception.stock.IdempotencyKeyReuseException;
+import com.fixops.inventory.common.exception.stock.InsufficientStockException;
+import com.fixops.inventory.common.exception.stock.StockNotFoundException;
 import com.fixops.inventory.common.response.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
 import java.util.LinkedHashMap;

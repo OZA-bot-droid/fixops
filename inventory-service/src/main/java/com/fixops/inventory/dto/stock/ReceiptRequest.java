@@ -1,4 +1,4 @@
-package com.fixops.inventory.dto;
+package com.fixops.inventory.dto.stock;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

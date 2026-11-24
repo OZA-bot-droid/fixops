@@ -1,4 +1,4 @@
-package com.fixops.inventory.dto;
+package com.fixops.inventory.dto.stock;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.Instant;

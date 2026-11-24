@@ -1,4 +1,4 @@
-package com.fixops.inventory.dto;
+package com.fixops.inventory.dto.part;
 
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;

@@ -1,4 +1,4 @@
-package com.fixops.inventory.common.exception;
+package com.fixops.inventory.common.exception.stock;
 
 //부품의 재고 행이 없을 때 (RESOURCE_NOT_FOUND, 404)
 public class StockNotFoundException extends RuntimeException {

@@ -1,4 +1,4 @@
-package com.fixops.inventory.common.exception;
+package com.fixops.inventory.common.exception.part;
 
 import com.fixops.inventory.entity.PartStatus;
 

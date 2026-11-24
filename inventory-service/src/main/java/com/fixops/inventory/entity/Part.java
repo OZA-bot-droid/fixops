@@ -23,32 +23,42 @@ import java.time.Instant;
                 columnNames = {"organization_id", "sku"}))
 public class Part {
 
+    // PK. IDENTITY: 번호는 저장할 때 DB(BIGSERIAL)가 붙인다.
+    // 그래서 새로 만든 객체는 id 가 null 이고, JPA 는 이것을 보고 INSERT 를 한다 (id 가 있으면 UPDATE).
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // 어느 단지(조직)의 부품인지. 모든 조회·수정 조건에 함께 들어가서, 남의 단지 부품을 볼 수 없게 한다.
     @Column(name = "organization_id", nullable = false)
     private Long organizationId;
 
+    // 부품 코드 (예: BOLT-M8). 같은 조직 안에서 유일(uq_part_org_sku). 등록 후에는 바꾸지 않는다.
     @Column(nullable = false, length = 64)
     private String sku;
 
     @Column(nullable = false, length = 200)
     private String name;
 
+    // 분류 (예: 체결, 배관). 비워 둘 수 있다.
     @Column(length = 64)
     private String category;
 
+    // 단위 (EA, M, L 등). 등록할 때 비우면 EA(개).
     @Column(nullable = false, length = 16)
     private String unit;
 
+    // 안전재고. 현재 수량이 이 값보다 적으면 "부족 재고"로 본다 (목록의 lowStockOnly).
     @Column(name = "safety_stock", nullable = false)
     private Integer safetyStock;
 
+    // EnumType.STRING: DB 에 0, 1 같은 숫자가 아니라 'ACTIVE' 같은 글자로 저장한다.
+    // 숫자(ORDINAL)로 저장하면 enum 의 순서를 바꾸는 순간 이미 저장된 데이터의 뜻이 바뀐다.
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private PartStatus status;
 
+    // updatable = false: 처음 저장한 뒤에는 UPDATE 문에 넣지 않는다 (생성 시각은 바뀌면 안 됨).
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -59,6 +69,8 @@ public class Part {
     protected Part() {
     }
 
+    // 새 부품의 기본값 규칙은 이 한 곳에만 둔다 (unit 없으면 EA, 안전재고 없으면 0, 상태는 ACTIVE).
+    // private: 밖에서는 아래 create() 로만 만들 수 있다.
     private Part(Long organizationId, String sku, String name, String category,
                  String unit, Integer safetyStock) {
         this.organizationId = organizationId;
@@ -108,6 +120,10 @@ public class Part {
     void onUpdate() {
         this.updatedAt = Instant.now();
     }
+
+    // ----- getter 만 있고 setter 는 없다 -----
+    // 값은 create()(처음 만들 때)와 changeInfo()(수정할 때)로만 바뀐다.
+    // 아무 곳에서나 setXxx() 로 바꾸면 검증 없이 값이 바뀌고, 어디서 바꿨는지 찾기 어렵다.
 
     public Long getId() {
         return id;

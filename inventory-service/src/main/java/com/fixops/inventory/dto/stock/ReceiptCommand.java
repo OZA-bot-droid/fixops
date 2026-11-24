@@ -1,4 +1,4 @@
-package com.fixops.inventory.dto;
+package com.fixops.inventory.dto.stock;
 
 /**
  * 입고에 필요한 값 (Service 입구).

@@ -1,4 +1,4 @@
-package com.fixops.inventory.common.exception;
+package com.fixops.inventory.common.exception.part;
 
 /**
  * 부품이 없거나 다른 조직의 부품일 때 (RESOURCE_NOT_FOUND, 404).

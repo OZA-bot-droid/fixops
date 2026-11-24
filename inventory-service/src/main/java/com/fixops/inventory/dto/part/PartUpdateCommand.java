@@ -1,4 +1,4 @@
-package com.fixops.inventory.dto;
+package com.fixops.inventory.dto.part;
 
 /**
  * 부품 정보 수정에 필요한 값 (Service 입구).

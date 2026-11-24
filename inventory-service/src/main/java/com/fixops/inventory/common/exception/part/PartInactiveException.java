@@ -1,4 +1,4 @@
-package com.fixops.inventory.common.exception;
+package com.fixops.inventory.common.exception.part;
 
 /**
  * 비활성(INACTIVE) 부품에 입고하려 할 때 (PART_INACTIVE, 409).

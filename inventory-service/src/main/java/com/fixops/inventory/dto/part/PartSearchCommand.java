@@ -1,4 +1,4 @@
-package com.fixops.inventory.dto;
+package com.fixops.inventory.dto.part;
 
 /**
  * 부품 목록 조회 조건 (Service 입구). 페이지 정보(Pageable)는 따로 받는다.

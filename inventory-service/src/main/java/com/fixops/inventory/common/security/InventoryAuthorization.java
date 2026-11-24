@@ -1,7 +1,7 @@
 package com.fixops.inventory.common.security;
 
-import com.fixops.inventory.common.exception.OrgAccessDeniedException;
-import com.fixops.inventory.common.exception.UnauthenticatedException;
+import com.fixops.inventory.common.exception.auth.OrgAccessDeniedException;
+import com.fixops.inventory.common.exception.auth.UnauthenticatedException;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 
