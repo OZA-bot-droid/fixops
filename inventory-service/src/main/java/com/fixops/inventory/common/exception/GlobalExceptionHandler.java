@@ -85,6 +85,12 @@ public class GlobalExceptionHandler {
         return respond(ErrorCode.DUPLICATE_SKU, details, e);
     }
 
+    // 409: 비활성 부품에 입고 (D7)
+    @ExceptionHandler(PartInactiveException.class)
+    public ResponseEntity<ErrorResponse> handlePartInactive(PartInactiveException e) {
+        return respond(ErrorCode.PART_INACTIVE, null, e);
+    }
+
     // ===== 2. 입력값 오류 (400) =====
 
     /**
