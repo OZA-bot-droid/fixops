@@ -6,11 +6,7 @@ import com.fixops.workorder.report.domain.Report;
 import com.fixops.workorder.report.domain.ReportStatus;
 import com.fixops.workorder.report.repository.ReportRepository;
 import com.fixops.workorder.workorder.domain.*;
-import com.fixops.workorder.workorder.dto.WorkOrderAssignDTO;
-import com.fixops.workorder.workorder.dto.WorkOrderHistoryResponseDTO;
-import com.fixops.workorder.workorder.dto.WorkOrderResponseDTO;
-import com.fixops.workorder.workorder.dto.WorkOrderSaveDTO;
-import com.fixops.workorder.workorder.dto.WorkOrderStatusDTO;
+import com.fixops.workorder.workorder.dto.*;
 import com.fixops.workorder.workorder.repository.WorkOrderAssignmentHistoryRepository;
 import com.fixops.workorder.workorder.repository.WorkOrderHistoryRepository;
 import com.fixops.workorder.workorder.repository.WorkOrderRepository;
@@ -77,6 +73,7 @@ public class WorkOrderService {
         // 신고 기반 등록일 때만 원본 신고와 연결
         if (report != null) {
             report.linkWorkOrder(saved.getId());
+            report.review(userId);
         }
 
         // 최초 작업지시 상태 이력 저장
@@ -87,22 +84,61 @@ public class WorkOrderService {
 
     // 조직·단지별 목록 조회
     @Transactional(readOnly = true)
-    public Page<WorkOrderResponseDTO> getWorkOrders(Long userId, Long organizationId, Long complexId, int page, int size) {
+    public Page<WorkOrderResponseDTO> getWorkOrders(Long userId, Long organizationId, Long complexId,
+                                                    Long locationId, Long assetId, String title, WorkOrderStatus status,
+                                                    WorkOrderPriority priority, Long assignedTo, int page, int size) {
         validateUserId(userId);
-        validateScope(organizationId, complexId);
         validatePage(page, size);
 
-        // TODO: Member 연동 - 요청자의 해당 조직·단지 조회 권한 검증
+        // 필수 조직 ID 검증
+        if (organizationId == null || organizationId <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // 선택적 검색 ID 검증
+        validateOptionalId(complexId);
+        validateOptionalId(locationId);
+        validateOptionalId(assetId);
+        validateOptionalId(assignedTo);
+
+        // 제목 검색어 검증
+        String keyword = title == null ? "" : title.trim();
+
+        if (keyword.length() > 200) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // TODO: Member 연동
+        // ADMIN 역할 및 조직·단지 접근 권한 검증
+
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
-        return workOrderRepository.findByOrganizationIdAndComplexId(organizationId, complexId, pageable).map(WorkOrderResponseDTO::fromEntity);
+
+        return workOrderRepository.searchWorkOrders(organizationId,
+                                                    complexId,
+                                                    locationId,
+                                                    assetId,
+                                                    status,
+                                                    priority,
+                                                    assignedTo,
+                                                    keyword,
+                                                    pageable
+        ).map(WorkOrderResponseDTO::fromEntity);
     }
 
     // 작업지시 상세 조회
     @Transactional(readOnly = true)
-    public WorkOrderResponseDTO getWorkOrder(Long id, Long userId) {
+    public WorkOrderResponseDTO getWorkOrder(Long id, Long userId, Long organizationId) {
         validateUserId(userId);
-        WorkOrder workOrder = findWorkOrder(id);
-        // TODO: Member 연동 - 작업지시 조직·단지 및 본인/담당 작업 조회 권한 검증
+
+        if (id == null || id <= 0 || organizationId == null || organizationId <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        WorkOrder workOrder = workOrderRepository.findByIdAndOrganizationId(id, organizationId).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // TODO: 요청자의 조직·단지 접근 권한 검증
+        // TODO: TECHNICIAN의 경우 본인 배정 작업인지 검증
+
         return WorkOrderResponseDTO.fromEntity(workOrder);
     }
 
@@ -175,6 +211,7 @@ public class WorkOrderService {
     }
 
     // 작업 상태 변경 이력 조회
+    @Transactional(readOnly = true)
     public List<WorkOrderHistoryResponseDTO> getWorkOrderHistory(Long id, Long userId) {
         validateUserId(userId);
         WorkOrder workOrder = findWorkOrder(id);
@@ -194,6 +231,64 @@ public class WorkOrderService {
     }
 
 
+    // 작업자 배정·재배정 이력 조회
+    @Transactional(readOnly = true)
+    public List<WorkOrderAssignmentHistoryResponseDTO> getAssignmentHistory(Long id, Long userId) {
+
+        validateUserId(userId);
+
+        WorkOrder workOrder = findWorkOrder(id);
+
+        // TODO: ADMIN 및 해당 작업 조회 권한 검증
+
+        return workOrderAssignmentHistoryRepository.findByWorkOrderIdOrderByCreatedAtDescIdDesc(workOrder.getId())
+                                                    .stream().map(WorkOrderAssignmentHistoryResponseDTO::fromEntity).toList();
+    }
+
+    // 작업자(TECHNICIAN) 본인에게 배정된 작업 조회
+    @Transactional(readOnly = true)
+    public Page<WorkOrderResponseDTO> getMyWorkOrders(Long userId, Long organizationId, Long complexId, Long locationId,
+                                                      Long assetId, String title, WorkOrderStatus status, WorkOrderPriority priority, int page, int size) {
+        // 사용자 ID 검증
+        validateUserId(userId);
+
+        // 페이지 검증
+        validatePage(page, size);
+
+        // 필수 조직 ID 검증
+        if (organizationId == null || organizationId <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // 선택적 ID 검증
+        validateOptionalId(complexId);
+        validateOptionalId(locationId);
+        validateOptionalId(assetId);
+
+        // 제목 검색어 처리
+        String keyword = title == null ? "" : title.trim();
+
+        if (keyword.length() > 200) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // TODO: Member 서비스 연동
+        // 1. TECHNICIAN 역할 검증
+        // 2. 조직 소속 검증
+        // 3. 승인된 단지 접근 범위 검증
+
+        // 최신순 조회
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
+
+        // assignedTo에 작업자 ID 전달해서 작업자 본인의 작업 목록 조회
+        return workOrderRepository.searchWorkOrders(organizationId, complexId, locationId, assetId, status, priority, userId,
+                keyword, pageable).map(WorkOrderResponseDTO::fromEntity);
+    }
+
+
+
+
+
     //    ==============================
     //
     //        검증 관련
@@ -210,16 +305,21 @@ public class WorkOrderService {
     // 관리자 직접 등록 시 필수값 검증
     private void validateDirectWorkOrder(WorkOrderSaveDTO dto) {
 
-        if (dto.getComplexId() == null || dto.getComplexId() <= 0 || dto.getLocationId() == null || dto.getLocationId() <= 0) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-
-        if (dto.getTitle() == null || dto.getTitle().isBlank() || dto.getTitle().length() > 200) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-
         // TODO: Member - 관리자의 조직/단지 접근 권한 검증
         // TODO: Asset - locationId가 해당 단지에 속하는지 검증
+
+
+
+
+    }
+
+    // 선택적인 ID 검증
+    private void validateOptionalId(Long id) {
+        if (id != null && id <= 0) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_INPUT
+            );
+        }
     }
 
     // 작업 생성 DTO 기본 검증

@@ -18,5 +18,6 @@ public class WorkOrderStatusDTO {
     private WorkOrderStatus status;
 
     @NotNull(message = "버전은 필수입니다.")
+    @PositiveOrZero
     private Long expectedVersion;
 }

@@ -3,6 +3,7 @@ package com.fixops.workorder.report.dto;
 import com.fixops.workorder.report.domain.Report;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -16,14 +17,17 @@ import lombok.NoArgsConstructor;
 public class ReportSaveDTO {
     // 조직 ID
     @NotNull(message = "조직 ID는 필수입니다.")
+    @Positive(message = "조직 ID는 양수여야 합니다.")
     private Long organizationId;
 
     // 건물(단지) ID
     @NotNull(message = "단지 ID는 필수입니다.")
+    @Positive(message = "단지 ID는 양수여야 합니다.")
     private Long complexId;
 
     // 장소 ID
     @NotNull(message = "장소는 필수입니다.")
+    @Positive(message = "장소 ID는 양수여야 합니다.")
     private Long locationId;
 
     // 신고 제목

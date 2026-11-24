@@ -86,4 +86,18 @@ public class Report extends BaseEntity {
     public void linkWorkOrder(Long workOrderId) {
         this.workOrderId = workOrderId;
     }
+
+    // 신고 검토
+    public void review(Long adminId) {
+        this.reviewedBy = adminId;
+        this.reviewedAt = Instant.now();
+    }
+
+    // 신고 반려
+    public void reject(Long adminId, String reason) {
+        this.reviewedBy = adminId;
+        this.reviewedAt = Instant.now();
+        this.rejectionReason = reason;
+        this.status = ReportStatus.REJECTED;
+    }
 }

@@ -32,6 +32,45 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
     // workOrderId로 해당 report 조회
     Optional<Report> findByWorkOrderId(Long workOrderId);
 
+    // 관리자 신고 상세 조회
+    Optional<Report> findByIdAndOrganizationId(Long id, Long organizationId);
+
+    // 관리자 신고 상세 조회
+    Optional<Report> findByIdAndOrganizationIdAndComplexId(Long id, Long organizationId, Long complexId);
+
+
+    // 관리자용 신고 목록 조회
+    // 조직 전체 및 필터별 신고 목록 조회 - 조직 조건은 항상 적용하고 나머지 조건은 입력된 경우에만 적용
+    @Query("""
+            SELECT r
+            FROM Report r
+            WHERE r.organizationId = :organizationId
+              AND (
+                  :complexId IS NULL
+                  OR r.complexId = :complexId
+              )
+              AND (
+                  :locationId IS NULL
+                  OR r.locationId = :locationId
+              )
+              AND (
+                  :status IS NULL
+                  OR r.status = :status
+              )
+              AND (
+                  :keyword = ''
+                  OR LOWER(r.title) LIKE
+                     LOWER(CONCAT('%', :keyword, '%'))
+              )
+            """)
+    Page<Report> findAdminReports(
+            @Param("organizationId") Long organizationId,
+            @Param("complexId") Long complexId,
+            @Param("locationId") Long locationId,
+            @Param("status") ReportStatus status,
+            @Param("keyword") String keyword,
+            Pageable pageable
+    );
 
     // =======================================
     // SELECT FOR UPDATE 사용

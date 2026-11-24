@@ -1,6 +1,8 @@
 package com.fixops.workorder.workorder.controller;
 
 import com.fixops.workorder.common.response.ApiResponse;
+import com.fixops.workorder.workorder.domain.WorkOrderPriority;
+import com.fixops.workorder.workorder.domain.WorkOrderStatus;
 import com.fixops.workorder.workorder.dto.WorkOrderAssignDTO;
 import com.fixops.workorder.workorder.dto.WorkOrderSaveDTO;
 import com.fixops.workorder.workorder.dto.WorkOrderStatusDTO;
@@ -26,18 +28,23 @@ public class WorkOrderController {
         return new ResponseEntity<>(ApiResponse.success(workOrderService.createWorkOrder(dto, userId)), HttpStatus.CREATED);
     }
 
-    // 조직·단지별 작업지시 목록 조회
+    // 관리자 - 조직 전체 및 필터별 작업지시 목록 조회
     @GetMapping
     public ResponseEntity<?> getWorkOrders(@RequestHeader("X-Member-Id") Long userId, @RequestParam Long organizationId,
-                                           @RequestParam Long complexId, @RequestParam(defaultValue = "0") int page,
+                                           @RequestParam(required = false) Long complexId, @RequestParam(required = false) Long locationId,
+                                           @RequestParam(required = false) Long assetId, @RequestParam(required = false) String title,
+                                           @RequestParam(required = false) WorkOrderStatus status, @RequestParam(required = false) WorkOrderPriority priority,
+                                           @RequestParam(required = false) Long assignedTo, @RequestParam(defaultValue = "0") int page,
                                            @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(ApiResponse.success(workOrderService.getWorkOrders(userId, organizationId, complexId, page, size)));
+
+        return ResponseEntity.ok(ApiResponse.success(workOrderService.getWorkOrders(userId, organizationId, complexId, locationId, assetId,
+                                                    title, status, priority, assignedTo, page, size)));
     }
 
     // 작업지시 상세 조회
     @GetMapping("/{id}")
-    public ResponseEntity<?> getWorkOrder(@PathVariable Long id, @RequestHeader("X-Member-Id") Long userId) {
-        return ResponseEntity.ok(ApiResponse.success(workOrderService.getWorkOrder(id, userId)));
+    public ResponseEntity<?> getWorkOrder(@PathVariable Long id, @RequestHeader("X-Member-Id") Long userId, @RequestParam Long organizationId) {
+        return ResponseEntity.ok(ApiResponse.success(workOrderService.getWorkOrder(id, userId, organizationId)));
     }
 
     // 작업자 배정/재배정
@@ -56,5 +63,22 @@ public class WorkOrderController {
     @GetMapping("/{id}/history")
     public ResponseEntity<?> getWorkOrderHistory(@PathVariable Long id, @RequestHeader("X-Member-Id") Long userId) {
         return ResponseEntity.ok(ApiResponse.success(workOrderService.getWorkOrderHistory(id, userId)));
+    }
+
+    // 작업자 배정·재배정 이력 조회
+    @GetMapping("/{id}/assignment-history")
+    public ResponseEntity<?> getAssignmentHistory(@PathVariable Long id, @RequestHeader("X-Member-Id") Long userId) {
+        return ResponseEntity.ok(ApiResponse.success(workOrderService.getAssignmentHistory(id, userId)));
+    }
+
+    // 작업자 본인에게 배정된 작업 조회
+    @GetMapping("/my")
+    public ResponseEntity<?> getMyWorkOrders(@RequestHeader("X-Member-Id") Long userId, @RequestParam Long organizationId,
+                                             @RequestParam(required = false) Long complexId, @RequestParam(required = false) Long locationId,
+                                             @RequestParam(required = false) Long assetId, @RequestParam(required = false) String title,
+                                             @RequestParam(required = false) WorkOrderStatus status, @RequestParam(required = false) WorkOrderPriority priority,
+                                             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(ApiResponse.success(workOrderService.getMyWorkOrders(userId, organizationId, complexId,
+                                                                                locationId, assetId, title, status, priority, page, size)));
     }
 }

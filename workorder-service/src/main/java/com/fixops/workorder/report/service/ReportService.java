@@ -4,14 +4,16 @@ import com.fixops.workorder.common.response.BusinessException;
 import com.fixops.workorder.common.response.ErrorCode;
 import com.fixops.workorder.report.domain.Report;
 import com.fixops.workorder.report.domain.ReportStatus;
+import com.fixops.workorder.report.dto.ReportRejectDTO;
+import com.fixops.workorder.report.dto.ReportResponseDTO;
 import com.fixops.workorder.report.dto.ReportSaveDTO;
 import com.fixops.workorder.report.dto.ReportUpdateDTO;
 import com.fixops.workorder.report.repository.ReportRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -40,6 +42,7 @@ public class ReportService {
     }
 
     // 유저 신고 조회
+    @Transactional(readOnly = true)
     public Page<Report> getMyReport(Long userId, String title, String status, int page, int size) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.UNAUTHENTICATED);
@@ -63,23 +66,10 @@ public class ReportService {
         boolean hasTitle = !keyword.isEmpty();
 
         // 4. 상태 필터 처리
-        ReportStatus reportStatus = null;
-
-        // 공백 제거
-        String statusValue = status == null ? "" : status.trim();
-
-        // 상태값이 비어 있지 않고, 전체 조회(ALL) 아닐 때, enum으로 변환
-        if (!statusValue.isEmpty() && !statusValue.equalsIgnoreCase("ALL")) {
-            try {
-                // 입력된 문자열을 대문자로 변환하고 이름이 일치하는 enum 상수를 찾아 반환
-                // Locale.ROOT는 사용자의 언어·지역 설정에 영향을 받지 않는 방식으로 대소문자를 변환하기 위해 사용
-                reportStatus = ReportStatus.valueOf(statusValue.toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException ex) {
-                throw new BusinessException(ErrorCode.INVALID_INPUT);
-            }
-        }
+        ReportStatus reportStatus = parseReportStatus(status);
 
         boolean hasStatus = reportStatus != null;
+
 
         // 조건별 분기
         // 5. 제목 + 상태
@@ -130,19 +120,148 @@ public class ReportService {
         return report;
     }
 
+    // 관리자 신고 목록 조회
+    @Transactional(readOnly = true)
+    public Page<ReportResponseDTO> getAdminReports(Long userId, Long organizationId, Long complexId,
+                                                   Long locationId, String title, String status,
+                                                   int page, int size) {
+        // 사용자 및 필수 조직 ID 검증
+        validateUserId(userId);
+        validateId(organizationId);
+
+        // 선택적 검색 조건 검증
+        if (complexId != null) {
+            validateId(complexId);
+        }
+
+        if (locationId != null) {
+            validateId(locationId);
+        }
+
+        // 페이지 검증
+        if (page < 0 || size < 1 || size > 100) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // 제목 검색어 처리
+        String keyword = title == null ? "" : title.trim();
+
+        if (keyword.length() > 200) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        // 상태값 변환
+        ReportStatus reportStatus = parseReportStatus(status);
+
+        // TODO: Member 서비스 연동
+        // 1. 관리자 역할 확인
+        // 2. 요청 조직에 소속되어 있는지 확인
+        // 3. 접근 가능한 단지 범위 확인
+
+        // TODO: Asset 서비스 연동
+        // 요청 위치의 조직·단지 소속 검증
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
+
+        return reportRepository.findAdminReports(organizationId, complexId, locationId, reportStatus, keyword, pageable).map(ReportResponseDTO::fromEntity);
+    }
+
+    // 신고 상세 조회
+    @Transactional(readOnly = true)
+    public ReportResponseDTO getMyReportDetail(Long reportId, Long userId) {
+        validateUserId(userId);
+        validateId(reportId);
+
+        Report report = reportRepository.findByIdAndReportedBy(reportId, userId).orElseThrow(()
+                -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        return ReportResponseDTO.fromEntity(report);
+    }
+
+    // 신고 반려
+    public ReportResponseDTO rejectReport(Long reportId, ReportRejectDTO dto, Long userId) {
+        validateUserId(userId);
+        validateId(reportId);
+
+        if (dto == null || dto.getReason() == null || dto.getReason().isBlank() || dto.getReason().length() > 1000) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        Report report = reportRepository.findForWorkOrderConversion(reportId).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // TODO: ADMIN 및 조직·단지 권한 검증
+
+        if (report.getStatus() != ReportStatus.REPORTED || report.getWorkOrderId() != null) {
+            throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
+        }
+
+        report.reject(userId, dto.getReason().trim());
+
+        reportRepository.flush();
+
+        return ReportResponseDTO.fromEntity(report);
+    }
+
+    // 관리자 신고 상세 조회
+    @Transactional(readOnly = true)
+    public ReportResponseDTO getAdminReportDetail(Long reportId, Long userId, Long organizationId) {
+        validateUserId(userId);
+        validateId(reportId);
+        validateId(organizationId);
+
+        Report report = reportRepository.findByIdAndOrganizationId(reportId, organizationId).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+
+        // TODO: ADMIN 역할 검증
+        // TODO: 해당 조직 소속 검증
+        // TODO: report.getComplexId() 접근 권한 검증
+
+        return ReportResponseDTO.fromEntity(report);
+    }
 
 //    ==============================
 //
-//        검증 관련
+//        검증 관련 및 공통
 //
 //    ==============================
+
+
+    // 신고 상태 문자열을 ReportStatus Enum으로 변환
+    private ReportStatus parseReportStatus(String status) {
+
+        // null인 경우 빈 문자열로 변환하고 앞뒤 공백 제거
+        String statusValue = status == null ? "" : status.trim();
+
+        // 상태값이 없거나 ALL이면 전체 조회
+        if (statusValue.isEmpty() || statusValue.equalsIgnoreCase("ALL")) {
+            return null;
+        }
+
+        // 문자열을 ReportStatus Enum으로 변환
+        try {
+            return ReportStatus.valueOf(statusValue.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
+
+    // 사용자 ID 검증
+    private void validateUserId(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
+        }
+    }
+
+    // 리소스 ID 검증
+    private void validateId(Long id) {
+        if (id == null || id <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+    }
 
     // 신고 dto 값 검증
     private void validateReportFields(Long locationId, String title) {
         // 장소 ID 필수
-        if (locationId == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
+        validateId(locationId);
 
         // 제목 필수 및 최대 200자
         if (title == null || title.isBlank() || title.length() > 200) {
@@ -185,9 +304,15 @@ public class ReportService {
 
     // 신고 생성 검증
     private void validateCreateReport(ReportSaveDTO dto, Long userId) {
-        if (userId == null) {
-            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
+        validateUserId(userId);
+
+        if (dto == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
+
+        validateId(dto.getOrganizationId());
+        validateId(dto.getComplexId());
+
 
         validateReportFields(dto.getLocationId(), dto.getTitle());
 
@@ -202,9 +327,9 @@ public class ReportService {
     private Report validateEditableReport(Long reportId, Long userId) {
 
         // 사용자 ID 검사
-        if (userId == null) {
-            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
-        }
+        validateUserId(userId);
+
+        validateId(reportId);
 
         // 본인 신고 조회
         Report report = reportRepository.findEditableByIdAndReportedByForUpdate(reportId, userId)
