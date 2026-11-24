@@ -2,6 +2,8 @@ import api,{unwrap} from '../../api/client';
 export const signup=async(data)=>unwrap(await api.post('/members/signup',data));
 export const login=async(data)=>unwrap(await api.post('/members/login',data));
 export const refresh=async(refreshToken)=>unwrap(await api.post('/members/refresh',{refreshToken}));
+export const logout=async(refreshToken)=>unwrap(await api.post('/members/logout',{refreshToken}));
+export const logoutAll=async()=>unwrap(await api.post('/members/logout-all'));
 export const me=async()=>unwrap(await api.get('/members/me'));
 export const applyOrg=async(data)=>unwrap(await api.post('/organizations',data));
 export const myOrgs=async()=>unwrap(await api.get('/organizations/mine'));
