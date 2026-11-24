@@ -27,6 +27,9 @@ public enum ErrorCode {
     // 상태 전이 불허 - 409 Conflict
     INVALID_STATE_TRANSITION(HttpStatus.CONFLICT, "INVALID_STATE_TRANSITION", "허용되지 않는 상태 변경입니다."),
 
+    // 리소스가 변경되어 충돌이 일어났을 경우 - 409
+    RESOURCE_VERSION_CONFLICT(HttpStatus.CONFLICT, "RESOURCE_VERSION_CONFLICT", "다른 요청에 의해 데이터가 변경되었습니다."),
+
 //    // 차감 가능한 재고 부족(업무 충돌) - 409 Conflict
 //    INSUFFICIENT_STOCK(HttpStatus.CONFLICT, "INSUFFICIENT_STOCK", "재고가 부족합니다."),
 

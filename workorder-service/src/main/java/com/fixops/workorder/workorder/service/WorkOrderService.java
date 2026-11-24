@@ -5,15 +5,13 @@ import com.fixops.workorder.common.response.ErrorCode;
 import com.fixops.workorder.report.domain.Report;
 import com.fixops.workorder.report.domain.ReportStatus;
 import com.fixops.workorder.report.repository.ReportRepository;
-import com.fixops.workorder.workorder.domain.WorkOrder;
-import com.fixops.workorder.workorder.domain.WorkOrderHistory;
-import com.fixops.workorder.workorder.domain.WorkOrderPriority;
-import com.fixops.workorder.workorder.domain.WorkOrderStatus;
+import com.fixops.workorder.workorder.domain.*;
 import com.fixops.workorder.workorder.dto.WorkOrderAssignDTO;
 import com.fixops.workorder.workorder.dto.WorkOrderHistoryResponseDTO;
 import com.fixops.workorder.workorder.dto.WorkOrderResponseDTO;
 import com.fixops.workorder.workorder.dto.WorkOrderSaveDTO;
 import com.fixops.workorder.workorder.dto.WorkOrderStatusDTO;
+import com.fixops.workorder.workorder.repository.WorkOrderAssignmentHistoryRepository;
 import com.fixops.workorder.workorder.repository.WorkOrderHistoryRepository;
 import com.fixops.workorder.workorder.repository.WorkOrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +33,7 @@ public class WorkOrderService {
     private final ReportRepository reportRepository;
     private final WorkOrderRepository workOrderRepository;
     private final WorkOrderHistoryRepository workOrderHistoryRepository;
+    private final WorkOrderAssignmentHistoryRepository workOrderAssignmentHistoryRepository;
 
     // 작업지시 작성
     public WorkOrderResponseDTO createWorkOrder(WorkOrderSaveDTO dto, Long userId) {
@@ -47,7 +46,7 @@ public class WorkOrderService {
         // 신고 기반 등록
         if (dto.getReportId() != null) {
             report = reportRepository.findForWorkOrderConversion(dto.getReportId()).orElseThrow(()
-                                                -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+                    -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
             validateReportForWorkOrder(report, dto);
         } else {
@@ -61,17 +60,17 @@ public class WorkOrderService {
         // TODO: Asset - 장소 및 설비 유효성 검증
 
         WorkOrder workOrder = WorkOrder.builder()
-                                        .organizationId(dto.getOrganizationId())
-                                        .title(dto.getTitle().trim())
-                                        .description(dto.getDescription())
-                                        .complexId(dto.getComplexId())
-                                        .locationId(dto.getLocationId())
-                                        .assetId(dto.getAssetId())
-                                        .reportedBy(userId)
-                                        .priority(dto.getPriority() == null ? WorkOrderPriority.MEDIUM : dto.getPriority())
-                                        .status(WorkOrderStatus.REPORTED)
-                                        .relatedWorkOrderId(dto.getRelatedWorkOrderId())
-                                        .build();
+                .organizationId(dto.getOrganizationId())
+                .title(dto.getTitle().trim())
+                .description(dto.getDescription())
+                .complexId(dto.getComplexId())
+                .locationId(dto.getLocationId())
+                .assetId(dto.getAssetId())
+                .reportedBy(userId)
+                .priority(dto.getPriority() == null ? WorkOrderPriority.MEDIUM : dto.getPriority())
+                .status(WorkOrderStatus.REPORTED)
+                .relatedWorkOrderId(dto.getRelatedWorkOrderId())
+                .build();
 
         WorkOrder saved = workOrderRepository.saveAndFlush(workOrder);
 
@@ -116,14 +115,35 @@ public class WorkOrderService {
         validateAssignableStatus(workOrder);
 
         // TODO: Member 연동 - userId의 ADMIN 권한, technicianId의 TECHNICIAN 역할/조직/단지 검증
+        Long previousTechnicianId = workOrder.getAssignedTo();
+
         boolean initialAssign = workOrder.getStatus() == WorkOrderStatus.REPORTED;
-        workOrder.assign(dto.getTechnicianId());
+
+        // 연결된 Report 행을 잠그고 ASSIGNED로 상태 동기화
         if (initialAssign) {
-            workOrder.changeStatus(WorkOrderStatus.ASSIGNED);
-            workOrderHistoryRepository.save(new WorkOrderHistory(workOrder.getId(), WorkOrderStatus.REPORTED, WorkOrderStatus.ASSIGNED, userId));
+            syncReportStatus(workOrder.getId(), WorkOrderStatus.ASSIGNED);
         }
+
+        // 이미 같은 작업자에게 배정되어 있다면 변경 거부
+        if (Objects.equals(previousTechnicianId, dto.getTechnicianId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+        workOrder.assign(dto.getTechnicianId());
+
+        // 최초 배정: 상태 변경 이력
+        if (initialAssign) {
+            workOrderHistoryRepository.save(new WorkOrderHistory(workOrder.getId(), WorkOrderStatus.REPORTED, WorkOrderStatus.ASSIGNED, userId));
+
+        }
+
+        // 최초 배정 및 재배정 모두 기록
+        workOrderAssignmentHistoryRepository.save(new WorkOrderAssignmentHistory(workOrder.getId(), previousTechnicianId, dto.getTechnicianId(), userId));
+
         // ASSIGNED 상태 재배정 시 상태는 그대로이고, 상태 변경 이력은 생성하지 않음
         workOrderRepository.flush();
+
+
         return WorkOrderResponseDTO.fromEntity(workOrder);
     }
 
@@ -136,10 +156,21 @@ public class WorkOrderService {
         validateStatusTransition(workOrder, dto.getStatus());
 
         // TODO: Member 연동 - ADMIN/TECHNICIAN/신고자 권한과 해당 작업 배정 관계 확인
+
         WorkOrderStatus previous = workOrder.getStatus();
+
+        // 연결된 Report 행을 잠그고 상태 동기화
+        syncReportStatus(workOrder.getId(), dto.getStatus());
+
+        // WorkOrder 상태 변경
         workOrder.changeStatus(dto.getStatus());
+
+        // 변경 이력 저장
         workOrderHistoryRepository.save(new WorkOrderHistory(workOrder.getId(), previous, dto.getStatus(), userId));
+
+        // SQL 실행 및 낙관적 락 충돌 조기 감지
         workOrderRepository.flush();
+
         return WorkOrderResponseDTO.fromEntity(workOrder);
     }
 
@@ -149,6 +180,17 @@ public class WorkOrderService {
         WorkOrder workOrder = findWorkOrder(id);
         // TODO: Member 연동 - 해당 작업지시 이력 조회 권한 검증
         return workOrderHistoryRepository.findByWorkOrderIdOrderByCreatedAtDescIdDesc(workOrder.getId()).stream().map(WorkOrderHistoryResponseDTO::fromEntity).toList();
+    }
+
+    // 상태 동기화 용
+    private void syncReportStatus(Long workOrderId, WorkOrderStatus workOrderStatus) {
+        // 잠금 조회 메서드인 findByWorkOrderIdForUpdate 사용
+        reportRepository.findByWorkOrderIdForUpdate(workOrderId).ifPresent(report -> {
+
+            ReportStatus nextStatus = ReportStatus.valueOf(workOrderStatus.name());
+
+            report.changeStatus(nextStatus);
+        });
     }
 
 
@@ -308,7 +350,7 @@ public class WorkOrderService {
     // 버전 검사 (실제 동시 경합은 JPA @Version도 검사)
     private void validateVersion(WorkOrder workOrder, Long expectedVersion) {
         if (!Objects.equals(workOrder.getVersion(), expectedVersion)) {
-            throw new BusinessException(ErrorCode.BOOKING_CONFLICT);
+            throw new BusinessException(ErrorCode.RESOURCE_VERSION_CONFLICT);
         }
     }
 

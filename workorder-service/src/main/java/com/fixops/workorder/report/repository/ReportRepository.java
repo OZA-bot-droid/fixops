@@ -29,11 +29,16 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
     // 기존 ReportRepository 내부에 추가
     Optional<Report> findByIdAndReportedBy(Long id, Long reportedBy);
 
+    // workOrderId로 해당 report 조회
+    Optional<Report> findByWorkOrderId(Long workOrderId);
+
+
     // =======================================
     // SELECT FOR UPDATE 사용
 
 
     // 작업 생성: 같은 신고의 중복 WorkOrder 생성 방지
+    // 신고 → WorkOrder 생성 시 잠금
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM Report r WHERE r.id = :id")
     Optional<Report> findForWorkOrderConversion(@Param("id") Long id);
@@ -49,5 +54,15 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
               AND r.reportedBy = :reportedBy
             """)
     Optional<Report> findEditableByIdAndReportedByForUpdate(@Param("id") Long id, @Param("reportedBy") Long reportedBy);
+
+
+    // WorkOrder 상태 변경 시 연결된 신고 잠금
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT r
+            FROM Report r
+            WHERE r.workOrderId = :workOrderId
+            """)
+    Optional<Report> findByWorkOrderIdForUpdate(@Param("workOrderId") Long workOrderId);
     // =======================================
 }

@@ -210,6 +210,13 @@ public class ReportService {
         Report report = reportRepository.findEditableByIdAndReportedByForUpdate(reportId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
 
+        // 작업지시로 전환된 신고는 수정·취소 불가
+        if (report.getWorkOrderId() != null) {
+            throw new BusinessException(
+                    ErrorCode.INVALID_STATE_TRANSITION
+            );
+        }
+
         // REPORTED 상태에서만 수정·취소 가능
         if (report.getStatus() != ReportStatus.REPORTED) {
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
