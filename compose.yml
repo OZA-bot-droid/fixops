@@ -15,7 +15,7 @@ services:
       - fixops_pgdata:/var/lib/postgresql/data
       - ./infra/postgres/bootstrap:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -23,6 +23,19 @@ services:
       - "${DB_BIND_IP:-127.0.0.1}:${DB_PORT:-5432}:5432"
     shm_size: 256mb
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    command: [ "sh", "-c", "exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\"" ]
+    volumes:
+      - fixops_redisdata:/data
+    healthcheck:
+      test: [ "CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG" ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
   member:
     build: { context: ./member-service }
     environment:
@@ -30,6 +43,9 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/member_db
       DB_USER: member_app
       DB_PASSWORD: ${MEMBER_DB_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
       JWT_PRIVATE_KEY_PATH: /app/keys/private_key.pem
       JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
       PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
@@ -40,6 +56,7 @@ services:
       - ./local-secrets/jwt:/app/keys:ro
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     restart: on-failure
 
   asset:
@@ -84,7 +101,7 @@ services:
       DB_NAME: ai_db
       DB_USER: ai_app
       DB_PASSWORD: ${AI_DB_PASSWORD:?required}
-    command: ["alembic", "upgrade", "head"]
+    command: [ "alembic", "upgrade", "head" ]
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
@@ -127,6 +144,9 @@ services:
     environment:
       PORT: 8080
       JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
       MEMBER_SERVICE_URL: http://member:8081
       ASSET_SERVICE_URL: http://asset:8082
       WORKORDER_SERVICE_URL: http://workorder:8083
@@ -140,6 +160,7 @@ services:
       workorder: { condition: service_started }
       inventory: { condition: service_started }
       ai: { condition: service_started }
+      redis: { condition: service_healthy }
     restart: on-failure
 
   frontend:
@@ -152,3 +173,4 @@ services:
 
 volumes:
   fixops_pgdata:
+  fixops_redisdata:

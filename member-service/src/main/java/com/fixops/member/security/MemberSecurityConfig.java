@@ -2,8 +2,10 @@ package com.fixops.member.security;
 
 import com.nimbusds.jose.jwk.*;
 import com.nimbusds.jose.jwk.RSAKey;
+
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
+
 import com.nimbusds.jose.jwk.source.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
@@ -43,13 +45,24 @@ public class MemberSecurityConfig {
     }
 
     @Bean
-    JwtDecoder jwtDecoder(RSAPublicKey verificationKey, @Value("${fixops.jwt.issuer}") String issuer, @Value("${fixops.jwt.audience}") String audience) {
+    JwtDecoder jwtDecoder(RSAPublicKey verificationKey, @Value("${fixops.jwt.issuer}") String issuer, @Value("${fixops.jwt.audience}") String audience, com.fixops.member.service.AuthSessionCache sessions) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(verificationKey).signatureAlgorithm(SignatureAlgorithm.RS256).build();
         var issuerValidator = JwtValidators.createDefaultWithIssuer(issuer);
         decoder.setJwtValidator(jwt -> {
             var a = issuerValidator.validate(jwt);
             if (a.hasErrors()) return a;
-            return jwt.getAudience().contains(audience) ? org.springframework.security.oauth2.core.OAuth2TokenValidatorResult.success() : org.springframework.security.oauth2.core.OAuth2TokenValidatorResult.failure(new org.springframework.security.oauth2.core.OAuth2Error("invalid_token", "Invalid audience", null));
+            if (!jwt.getAudience().contains(audience))
+                return org.springframework.security.oauth2.core.OAuth2TokenValidatorResult.failure(new org.springframework.security.oauth2.core.OAuth2Error("invalid_token", "Invalid audience", null));
+            String sid = jwt.getClaimAsString("sid");
+            try {
+                if (sid != null && jwt.getSubject() != null &&
+                        sessions.isActive(java.util.UUID.fromString(sid), Long.valueOf(jwt.getSubject())))
+                    return org.springframework.security.oauth2.core.OAuth2TokenValidatorResult.success();
+            } catch (IllegalArgumentException invalidSessionId) {
+                // Invalid session ID / subject is always rejected.
+            }
+            return org.springframework.security.oauth2.core.OAuth2TokenValidatorResult.failure(
+                    new org.springframework.security.oauth2.core.OAuth2Error("invalid_token", "Session is not active", null));
         });
         return decoder;
     }
