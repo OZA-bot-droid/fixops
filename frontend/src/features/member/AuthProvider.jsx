@@ -1,17 +1,68 @@
-import {createContext,useCallback,useContext,useEffect,useMemo,useState} from 'react';
-import * as memberApi from './memberApi';import {setAccessToken} from '../../api/client';
-const Context=createContext(null);
-// Demo-only sessionStorage refresh token. Production: migrate to HttpOnly Secure SameSite cookie + CSRF.
-const KEY='fixops_demo_refresh';
-export function AuthProvider({children}){
- const [user,setUser]=useState(null);const [loading,setLoading]=useState(true);
- const signOut=useCallback(()=>{setAccessToken(null);sessionStorage.removeItem(KEY);setUser(null)},[]);
- const accept=useCallback((v)=>{setAccessToken(v.accessToken);sessionStorage.setItem(KEY,v.refreshToken);setUser(v.member)},[]);
- const signIn=useCallback(async(email,password)=>{const v=await memberApi.login({email,password});accept(v)},[accept]);
- useEffect(()=>{const t=sessionStorage.getItem(KEY);if(!t){setLoading(false);return;}
-  memberApi.refresh(t).then(accept).catch(signOut).finally(()=>setLoading(false));
- },[accept,signOut]);
- const value=useMemo(()=>({user,loading,signIn,signOut,loggedIn:!!user}),[user,loading,signIn,signOut]);
- return <Context.Provider value={value}>{children}</Context.Provider>;
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
+
+import {
+  subscribe,
+  getSnapshot,
+  restoreAuth,
+  signIn,
+  signOut,
+  refreshAuth,
+  clearAuth,
+  dismissNotice,
+} from "../../api/authSession";
+
+const Context = createContext(null);
+
+export function AuthProvider({ children }) {
+  const auth = useSyncExternalStore(subscribe, getSnapshot);
+
+  // 앱 최초 진입 시 인증 복원.
+  // StrictMode에서 Effect가 중복 실행되어도
+  // authSession의 refreshPromise가 요청을 공유한다.
+  useEffect(() => {
+    restoreAuth().catch(() => {
+      // 오류 상태는 authSession에서 관리한다.
+      // 여기서 다시 clearAuth를 호출하지 않는다.
+    });
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      user: auth.user,
+      status: auth.status,
+      loading: auth.status === "restoring",
+      loggedIn: Boolean(auth.user),
+      signingIn: auth.status === "signingIn",
+      signingOut: auth.status === "signingOut",
+      unavailable: auth.status === "unavailable",
+      authNotice: auth.notice,
+
+      signIn,
+      signOut: () => signOut(false),
+      signOutAll: () => signOut(true),
+      refreshAuth,
+      retryRestore: restoreAuth,
+      clearAuth,
+      dismissNotice,
+    }),
+    [auth],
+  );
+
+  return <Context.Provider value={value}>{children}</Context.Provider>;
 }
-export const useAuth=()=>{const v=useContext(Context);if(!v)throw new Error('AuthProvider required');return v};
+
+export const useAuth = () => {
+  const value = useContext(Context);
+
+  if (!value) {
+    throw new Error("AuthProvider required");
+  }
+
+  return value;
+};
