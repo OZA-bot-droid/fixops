@@ -1,0 +1,1100 @@
+{
+  "info": {
+    "name": "FixOps Inventory (부품 CRUD)",
+    "description": "inventory-service(8084)에 직접 요청. Gateway 가 아직 X-* 헤더를 넣어 주지 않아서 헤더를 직접 보낸다.\n위에서부터 순서대로 실행. '01 등록 성공'을 먼저 실행해야 partId 가 생긴다.\n요청 이름의 → 뒤가 기대 결과.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8084"
+    },
+    {
+      "key": "memberId",
+      "value": "1"
+    },
+    {
+      "key": "orgId",
+      "value": "1"
+    },
+    {
+      "key": "sku",
+      "value": ""
+    },
+    {
+      "key": "partId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. 서버 확인",
+      "item": [
+        {
+          "name": "서버 살아 있나 → 200 UP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "inventory-service 가 떠 있는지 확인. 실패하면 먼저 서버를 실행."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. 부품 등록 (POST)",
+      "item": [
+        {
+          "name": "01 등록 성공 → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "새 부품 등록. 수량 0 인 재고 행이 함께 생긴다. 성공하면 partId 가 컬렉션 변수에 저장된다.\n먼저 실행해야 아래 요청들이 동작한다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"볼트 M8\",\n  \"category\": \"체결\",\n  \"unit\": \"EA\",\n  \"safetyStock\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 실행할 때마다 새 SKU 를 만든다 (같은 SKU 로 두 번 등록하면 409 가 나므로)",
+                  "pm.collectionVariables.set('sku', 'BOLT-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 성공하면 새 부품 번호를 저장해서 수정 요청에서 쓴다",
+                  "if (pm.response.code === 201) {",
+                  "  pm.collectionVariables.set('partId', pm.response.json().data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02 같은 SKU 다시 등록 → 409 DUPLICATE_SKU",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "01 직후에 실행. details 에 기존 partId, partStatus 가 들어 있어야 한다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"볼트 M8\",\n  \"category\": \"체결\",\n  \"unit\": \"EA\",\n  \"safetyStock\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "03 sku 빈칸 → 400 INVALID_INPUT",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "@Valid 검증 실패. error.details.sku 에 이유가 들어 있어야 한다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"\",\n  \"name\": \"볼트 M8\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "04 TECHNICIAN 이 등록 → 403 ORG_ACCESS_DENIED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "TECHNICIAN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "부품 등록은 ADMIN 만 가능.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"볼트 M8\",\n  \"category\": \"체결\",\n  \"unit\": \"EA\",\n  \"safetyStock\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "05 Idempotency-Key 없이 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "계약상 필수 헤더 누락.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"볼트 M8\",\n  \"category\": \"체결\",\n  \"unit\": \"EA\",\n  \"safetyStock\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. 부품 목록 (GET)",
+      "item": [
+        {
+          "name": "11 기본 목록 → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "ACTIVE 만, sku 오름차순, 20개씩. data.content / page / size / totalElements 확인."
+          }
+        },
+        {
+          "name": "12 검색어 '볼트' → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?q=볼트",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "볼트"
+                }
+              ]
+            },
+            "description": "SKU 또는 이름에 '볼트'가 들어간 부품."
+          }
+        },
+        {
+          "name": "13 대소문자 무시 검색 'bolt' → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?q=bolt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "bolt"
+                }
+              ]
+            },
+            "description": "ILIKE 확인. BOLT-... 가 나와야 한다."
+          }
+        },
+        {
+          "name": "14 부족 재고만 → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?lowStockOnly=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "lowStockOnly",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "수량 < 안전재고 인 것만. 01 에서 만든 부품(수량 0, 안전재고 10)이 나와야 한다."
+          }
+        },
+        {
+          "name": "15 상태 전체(ALL) → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?status=ALL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ALL"
+                }
+              ]
+            },
+            "description": "ACTIVE + INACTIVE 모두."
+          }
+        },
+        {
+          "name": "16 수량순 정렬 → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?sort=quantity,asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "quantity,asc"
+                }
+              ]
+            },
+            "description": "허용 정렬: sku, name, quantity."
+          }
+        },
+        {
+          "name": "17 페이지 크기 5 → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?page=0&size=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "size 상한은 100."
+          }
+        },
+        {
+          "name": "18 허용 안 된 정렬 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?sort=price,asc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "price,asc"
+                }
+              ]
+            },
+            "description": "price 는 정렬 허용 목록에 없음."
+          }
+        },
+        {
+          "name": "19 size 101 → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?size=101",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "101"
+                }
+              ]
+            },
+            "description": "@Max(100) 검증."
+          }
+        },
+        {
+          "name": "20 헤더 없이 → 401 UNAUTHENTICATED",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "로그인 정보 헤더가 없음."
+          }
+        },
+        {
+          "name": "21 USER 가 조회 → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "조회는 ADMIN, TECHNICIAN 만."
+          }
+        },
+        {
+          "name": "22 TECHNICIAN 조회 → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "TECHNICIAN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ]
+            },
+            "description": "작업자는 조회 가능."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. 부품 수정 (PATCH)",
+      "item": [
+        {
+          "name": "31 안전재고 수정 → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/{{partId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "{{partId}}"
+              ]
+            },
+            "description": "보낸 항목만 바뀐다. safetyStock 30, updatedAt 이 바뀌었는지 확인.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"safetyStock\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "32 이름·카테고리 수정 → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/{{partId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "{{partId}}"
+              ]
+            },
+            "description": "sku 를 함께 보내도 무시되어 그대로여야 한다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"볼트 M8 개선형\",\n  \"category\": \"체결부품\",\n  \"sku\": \"바뀌면-안됨\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "33 빈 본문 → 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/{{partId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "{{partId}}"
+              ]
+            },
+            "description": "수정할 항목이 없습니다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "34 이름 공백 → 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/{{partId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "{{partId}}"
+              ]
+            },
+            "description": "보낸 name 이 비어 있음.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"  \"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "35 안전재고 음수 → 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/{{partId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "{{partId}}"
+              ]
+            },
+            "description": "@PositiveOrZero 검증.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"safetyStock\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "36 없는 부품 → 404 RESOURCE_NOT_FOUND",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "999999"
+              ]
+            },
+            "description": "없는 번호 (다른 단지 부품도 같은 404).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"safetyStock\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "37 다른 단지에서 수정 → 404",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "999"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/{{partId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "{{partId}}"
+              ]
+            },
+            "description": "X-Org-Id 를 999 로 바꿔 보냄. 남의 단지 부품은 '없음'으로 답해야 한다.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"safetyStock\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "38 TECHNICIAN 이 수정 → 403",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "TECHNICIAN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts/{{partId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts",
+                "{{partId}}"
+              ]
+            },
+            "description": "수정은 ADMIN 만.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"safetyStock\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
