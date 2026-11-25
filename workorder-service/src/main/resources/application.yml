@@ -20,3 +20,21 @@ management:
     web:
       exposure:
         include: health,info
+
+# 예약 정책
+booking:
+
+  # 기술자 최대 응답 시간
+  technician-response-hours: ${BOOKING_TECHNICIAN_RESPONSE_HOURS:24}
+
+  # 예약 요청자 최대 응답 시간
+  requester-response-hours: ${BOOKING_REQUESTER_RESPONSE_HOURS:12}
+
+  # 전체 일정 협의 유효기간
+  negotiation-expiry-hours: ${BOOKING_NEGOTIATION_EXPIRY_HOURS:48}
+
+  # 방문 전 최소 준비시간
+  minimum-lead-hours: ${BOOKING_MINIMUM_LEAD_HOURS:1}
+
+  # 만료 대상 조회 주기 (밀리초)
+  expiry-check-interval-ms: ${BOOKING_EXPIRY_CHECK_INTERVAL_MS:60000}

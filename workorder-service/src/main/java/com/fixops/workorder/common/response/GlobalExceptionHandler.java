@@ -2,6 +2,7 @@ package com.fixops.workorder.common.response;
 
 import org.slf4j.MDC;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingRequestHeaderException;
@@ -11,7 +12,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.dao.OptimisticLockingFailureException;
-
+import org.springframework.dao.DataIntegrityViolationException;
+import org.hibernate.exception.ConstraintViolationException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -80,5 +82,49 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ApiResponse<Void>> handleMissingParameter(MissingServletRequestParameterException ex) {
         return errorResponse(ErrorCode.INVALID_INPUT);
+    }
+
+    // DB 무결성 제약조건 위반 처리
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+
+        String constraintName = findConstraintName(e);
+
+        ErrorCode errorCode;
+
+
+        if ("no_technician_overlap".equals(constraintName) || "uq_active_schedule_per_workorder".equals(constraintName)) {
+
+            errorCode = ErrorCode.BOOKING_CONFLICT;
+
+        } else if ("uq_active_proposal_per_schedule".equals(constraintName)) {
+
+            errorCode = ErrorCode.RESOURCE_VERSION_CONFLICT;
+
+        } else {
+
+            // 예상하지 못한 무결성 오류는 서버 오류로 처리
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse<Void>(false, null, new ApiResponse.ApiError("INTERNAL_SERVER_ERROR", "데이터 처리 중 오류가 발생했습니다."), MDC.get("traceId"), java.time.Instant.now()));
+        }
+
+
+        return ResponseEntity.status(errorCode.getStatus()).body(ApiResponse.error(errorCode, MDC.get("traceId")));
+    }
+
+    // 제약조건 이름을 확인
+    private String findConstraintName(Throwable throwable) {
+
+        Throwable cause = throwable;
+
+        while (cause != null) {
+            if (cause instanceof ConstraintViolationException e) {
+
+                return e.getConstraintName();
+            }
+
+            cause = cause.getCause();
+        }
+
+        return null;
     }
 }

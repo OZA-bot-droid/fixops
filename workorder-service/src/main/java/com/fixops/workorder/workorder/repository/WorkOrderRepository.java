@@ -3,9 +3,11 @@ package com.fixops.workorder.workorder.repository;
 import com.fixops.workorder.workorder.domain.WorkOrder;
 import com.fixops.workorder.workorder.domain.WorkOrderPriority;
 import com.fixops.workorder.workorder.domain.WorkOrderStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -69,4 +71,14 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, Long> {
             @Param("keyword") String keyword,
             Pageable pageable
     );
+
+
+    // 예약 생성 및 상태 변경을 위한 작업지시 잠금
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT w
+            FROM WorkOrder w
+            WHERE w.id = :workOrderId
+            """)
+    Optional<WorkOrder> findByIdForUpdate(@Param("workOrderId") Long workOrderId);
 }
