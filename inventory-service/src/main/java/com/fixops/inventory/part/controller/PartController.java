@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 부품 API 입구 (OpenAPI: GET/POST /api/inventory/parts, PATCH /api/inventory/parts/{partId}).
+ * 부품 API 입구 (OpenAPI: GET/POST /api/inventory/parts, GET·PATCH /api/inventory/parts/{partId}).
  *
  * [주소가 /inventory/parts 인 이유]
  *   Gateway 가 /api/inventory/** 를 받아 앞의 /api 를 떼고(stripPrefix(1)) 여기로 넘긴다.
@@ -105,6 +105,27 @@ public class PartController {
         return ResponseEntity
                 .created(URI.create("/api/inventory/parts/" + created.id()))   // 201 + Location 헤더
                 .body(ApiResponse.ok(created));
+    }
+
+    /**
+     * 부품 하나 조회 (ADMIN, TECHNICIAN). 부품 정보 + 현재 수량.
+     * 예) GET /api/inventory/parts/92
+     *
+     * ⏳ 팀장님 승인 대기: docs/04 필수 API 목록에 없는 주소다 (MCP get_part_stock 에 필요해서 D9 에 추가).
+     *    승인되지 않으면 이 메서드를 지우고, get_part_stock 도구도 함께 뺀다.
+     *
+     * 다른 단지 부품이면 "없음"(404) — PartService.get() 이 단지 번호를 함께 조건으로 찾는다.
+     */
+    @GetMapping("/{partId}")
+    public ApiResponse<PartResult> get(
+            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
+            @PathVariable @Positive long partId) {
+
+        CurrentMember member = authorization.requireRead(memberId, role, organizationId);
+
+        return ApiResponse.ok(partService.get(member.organizationId(), partId));   // 200
     }
 
     /**

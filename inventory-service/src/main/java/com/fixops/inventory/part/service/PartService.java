@@ -90,7 +90,7 @@ public class PartService {
     }
 
     /**
-     * 부품 단건 조회 (MCP get_part_stock 용, GET /parts/{partId} 는 팀장 승인 대기).
+     * 부품 단건 조회 (GET /parts/{partId}, MCP get_part_stock 용). ⏳ 주소는 팀장님 승인 대기.
      * 다른 조직 부품이면 "없음"(404)으로 답한다.
      */
     @Transactional(readOnly = true)

@@ -140,6 +140,32 @@ paths:
                     timestamp: '2026-11-20T04:00:00Z'
 
   /inventory/parts/{partId}:
+    get:
+      tags: [parts]
+      summary: 부품 하나 조회
+      description: |
+        ⏳ 팀장 승인 대기 (docs/04 필수 API 목록에 없음). MCP get_part_stock 의 원본.
+        ADMIN, TECHNICIAN. 부품 정보와 현재 수량. 다른 조직의 부품이면 404.
+      operationId: getPart
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/Part' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [parts]
       summary: 부품 정보 수정

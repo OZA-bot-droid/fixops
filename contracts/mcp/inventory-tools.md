@@ -155,7 +155,7 @@ SKU 또는 이름으로 부품을 찾는다.
 
 ## 6. 미결 항목
 
-1. **`GET /api/inventory/parts/{partId}` 신규 추가** — `get_part_stock`에 필요한데 `docs/04` 필수 API 목록에는 컬렉션 경로(`GET/POST /api/inventory/parts`)만 있다. 팀장 승인 필요.
-2. **MCP Server와 Inventory 사이의 인증 방식** — 서비스 신원 + 사용자 위임 컨텍스트를 어떤 형식으로 전달할지 (하진철 협의).
-3. **MCP SDK 미확정** — 도구 등록 코드는 SDK가 정해진 뒤 작성한다. 본 문서의 입력 스키마와 출력 형식은 SDK와 무관하게 유효하다.
+1. **`GET /api/inventory/parts/{partId}` 신규 추가** — `get_part_stock`에 필요한데 `docs/04` 필수 API 목록에는 컬렉션 경로(`GET/POST /api/inventory/parts`)만 있다. D9에 구현은 해 두었고(PartController, inventory.yaml에 "승인 대기" 표시) **팀장 승인 필요**. 승인되지 않으면 API와 `get_part_stock` 도구를 함께 뺀다.
+2. **MCP Server와 Inventory 사이의 인증 방식** — 서비스 신원 + 사용자 위임 컨텍스트를 어떤 형식으로 전달할지 (팀장·하진철 협의). 코드에서는 `_delegated_headers()` 한 곳이 빈 자리로 남아 있고, 정해지기 전까지 모든 도구가 `UNAUTHENTICATED`로 거부한다.
+3. ~~MCP SDK 미확정~~ (D9 확정) — `mcp` 2.x(`mcp-server/pyproject.toml`). 구현은 `mcp-server/app/tools/inventory.py`, 등록은 `register(mcp)`. `server.py` 연결은 하진철님과 맞춘 뒤에 한다.
 4. **`visibility` 값 집합** — 현재 `ORG` 하나만 쓴다. 다른 서비스가 다른 값을 쓰면 맞춘다.
