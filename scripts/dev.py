@@ -68,6 +68,15 @@ def env_for(service,integrate=False):
         env.update(REDIS_HOST=redis_host, REDIS_PORT=vals.get('REDIS_PORT','6379'),
             REDIS_PASSWORD=redis_password,
         )
+    if service == 'member':
+        env['AUTH_COOKIE_SECURE'] = vals.get(
+            'AUTH_COOKIE_SECURE',
+            'false'
+        )
+        env['AUTH_ALLOWED_ORIGINS'] = vals.get(
+            'AUTH_ALLOWED_ORIGINS',
+            'http://localhost:5173,http://localhost:8088'
+        )
     if service in DBS:
         name=DBS[service]
         env.update(DB_URL=f'jdbc:postgresql://{host}:5432/{name}',DB_USER=ROLES[service],DB_PASSWORD=vals[service.upper()+'_DB_PASSWORD'])

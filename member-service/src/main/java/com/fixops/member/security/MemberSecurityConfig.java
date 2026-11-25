@@ -17,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CsrfFilter;
 
 import java.security.interfaces.*;
 import java.util.*;
@@ -68,11 +69,41 @@ public class MemberSecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain filter(HttpSecurity http) throws Exception {
-        return http.csrf(csrf -> csrf.disable()).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(a -> a.requestMatchers(HttpMethod.POST, "/members/signup", "/members/login", "/members/refresh").permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll().anyRequest().authenticated())
-                .oauth2ResourceServer(o -> o.jwt(j -> {
-                })).build();
+    SecurityFilterChain filter(
+            HttpSecurity http,
+            @Value("${fixops.cookie.allowed-origins}")
+            String allowedOrigins
+    ) throws Exception {
+        return http
+                .csrf(csrf -> csrf.disable())
+                .addFilterBefore(
+                        new AuthOriginFilter(allowedOrigins),
+                        CsrfFilter.class
+                )
+                .sessionManagement(s ->
+                        s.sessionCreationPolicy(
+                                SessionCreationPolicy.STATELESS
+                        )
+                )
+                .authorizeHttpRequests(a -> a
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/members/signup",
+                                "/members/login",
+                                "/members/refresh",
+                                "/members/clear-cookie"
+                        ).permitAll()
+
+                        .requestMatchers(
+                                "/actuator/health",
+                                "/actuator/info"
+                        ).permitAll()
+
+                        .anyRequest().authenticated()
+                )
+                .oauth2ResourceServer(o ->
+                        o.jwt(j -> {})
+                )
+                .build();
     }
 }

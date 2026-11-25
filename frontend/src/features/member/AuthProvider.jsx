@@ -14,6 +14,8 @@ import {
   signOut,
   refreshAuth,
   clearAuth,
+  clearBrowserAuth,
+  retryLogout,
   dismissNotice,
 } from "../../api/authSession";
 
@@ -48,7 +50,9 @@ export function AuthProvider({ children }) {
       signOutAll: () => signOut(true),
       refreshAuth,
       retryRestore: restoreAuth,
+      retryLogout,
       clearAuth,
+      clearBrowserAuth,
       dismissNotice,
     }),
     [auth],

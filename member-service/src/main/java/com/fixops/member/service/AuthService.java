@@ -61,7 +61,7 @@ public class AuthService {
         return members.save(new Member(normalized, encoder.encode(password), name.trim(), demoVerify));
     }
 
-    public Map<String, Object> login(String email, String password) {
+    public TokenResult login(String email, String password) {
         Member member = members.findByEmail(email.trim().toLowerCase(Locale.ROOT))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS"));
         if (!encoder.matches(password, member.passwordHash))
@@ -69,7 +69,7 @@ public class AuthService {
         // Commit DB state before publishing an active Redis session.
         AuthSession session = new AuthSession(UUID.randomUUID(), member.id,
                 Instant.now().plus(Duration.ofDays(refreshDays)));
-        Map<String, Object> tokens = txTemplate.execute(status -> {
+        TokenResult tokens = txTemplate.execute(status -> {
             authSessions.save(session);
             return issue(member, session);
         });
@@ -103,7 +103,7 @@ public class AuthService {
     }
 
     @Transactional
-    public Map<String, Object> refresh(String raw) {
+    public TokenResult refresh(String raw) {
         String hash = sha(raw);
         // Resolve sid without locking the refresh row first; always acquire session lock first.
         RefreshSession initial = sessions.findUnlockedByTokenHash(hash)
@@ -154,7 +154,7 @@ public class AuthService {
         authSessions.saveAll(active);
     }
 
-    private Map<String, Object> issue(Member member, AuthSession session) {
+    private TokenResult issue(Member member, AuthSession session) {
         Instant now = Instant.now();
         var active = memberships.findByMemberIdAndStatus(member.id, "ACTIVE");
         var orgs = active.stream().map(x -> Map.of("organizationId", x.organizationId, "role", x.role)).toList();
@@ -172,8 +172,7 @@ public class AuthService {
         Instant refreshExpiry = now.plus(Duration.ofDays(refreshDays));
         if (refreshExpiry.isAfter(session.expiresAt)) refreshExpiry = session.expiresAt;
         sessions.save(new RefreshSession(UUID.randomUUID(), session.id, member.id, sha(refresh), refreshExpiry));
-        return Map.of("accessToken", access, "refreshToken", refresh, "tokenType", "Bearer",
-                "expiresIn", accessMinutes * 60, "member",
+        return new TokenResult(access, refresh,accessMinutes * 60L, refreshExpiry,
                 Map.of("id", member.id, "email", member.email, "name", member.displayName,
                         "platformAdmin", member.platformAdmin, "memberships", orgs));
     }
@@ -184,6 +183,23 @@ public class AuthService {
                     MessageDigest.getInstance("SHA-256").digest(raw.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException(ex);
+        }
+    }
+
+    public record TokenResult(
+            String accessToken,
+            String refreshToken,
+            long expiresIn,
+            Instant refreshExpiresAt,
+            Map<String, Object> member
+    ) {
+        public Map<String, Object> publicBody() {
+            return Map.of(
+                    "accessToken", accessToken,
+                    "tokenType", "Bearer",
+                    "expiresIn", expiresIn,
+                    "member", member
+            );
         }
     }
 }

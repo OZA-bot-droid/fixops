@@ -22,6 +22,9 @@ spring:
     baseline-on-migrate: false
     locations: classpath:db/migration
 fixops:
+  cookie:
+    secure: ${AUTH_COOKIE_SECURE:false}
+    allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:8088}
   jwt:
     issuer: fixops-auth
     audience: fixops-api

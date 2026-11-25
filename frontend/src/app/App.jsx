@@ -13,10 +13,19 @@ import {
 } from "../features/member/Pages";
 
 function Protected({ children, platform = false }) {
-  const { user, loading, signingOut, unavailable, retryRestore, clearAuth } =
-    useAuth();
+  const {
+    user,
+    loading,
+    signingOut,
+    clearing,
+    logoutFailed,
+    unavailable,
+    retryRestore,
+    retryLogout,
+    clearBrowserAuth,
+  } = useAuth();
 
-  if (loading || signingOut) {
+  if (loading || signingOut || clearing) {
     return (
       <div
         className="
@@ -25,7 +34,11 @@ function Protected({ children, platform = false }) {
         text-fixops-muted
       "
       >
-        {signingOut ? "로그아웃 처리 중…" : "인증 상태 확인 중…"}
+        {signingOut
+          ? "로그아웃 처리 중…"
+          : clearing
+            ? "인증 정보 초기화 중…"
+            : "인증 상태 확인 중…"}
       </div>
     );
   }
@@ -71,7 +84,9 @@ function Protected({ children, platform = false }) {
               다시 시도
             </button>
             <button
-              onClick={() => clearAuth()}
+              onClick={() => {
+                clearBrowserAuth().catch(() => {});
+              }}
               className="
                 rounded-lg
                 border border-fixops-border
@@ -81,6 +96,52 @@ function Protected({ children, platform = false }) {
               다시 로그인
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (logoutFailed) {
+    return (
+      <div
+        className="
+      grid min-h-screen
+      place-items-center
+      bg-fixops-background px-5
+    "
+      >
+        <div
+          className="
+        w-full max-w-md
+        rounded-2xl
+        border border-fixops-border
+        bg-white p-8
+      "
+        >
+          <h2 className="text-xl font-bold">로그아웃 실패</h2>
+
+          <p
+            className="
+          mt-3 text-sm
+          text-fixops-muted
+        "
+          >
+            서버 세션 종료를 확인하지 못했습니다. 다시 시도해 주세요.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              retryLogout().catch(() => {});
+            }}
+            className="
+            mt-6 rounded-lg
+            bg-fixops-primary
+            px-4 py-3 text-sm text-white
+          "
+          >
+            로그아웃 다시 시도
+          </button>
         </div>
       </div>
     );

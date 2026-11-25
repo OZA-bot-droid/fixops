@@ -1,6 +1,5 @@
 import axios from "axios";
 
-const REFRESH_KEY = "fixops_demo_refresh";
 const REFRESH_BUFFER_MS = 30_000;
 
 // 일반 API Interceptor와 분리된 인증 전용 Axios.
@@ -8,6 +7,11 @@ const REFRESH_BUFFER_MS = 30_000;
 export const authHttp = axios.create({
   baseURL: "/api",
   timeout: 10000,
+  withCredentials: true,
+
+  headers: {
+    "X-FixOps-CSRF": "1",
+  },
 });
 
 const listeners = new Set();
@@ -17,14 +21,16 @@ let expiresAt = 0;
 let refreshPromise = null;
 let loginPromise = null;
 let logoutPromise = null;
+let clearCookiePromise = null;
 
 // 이전 인증 세대에서 도착한 응답을 무효화하기 위한 번호.
 let generation = 0;
 
 let state = {
   user: null,
-  status: sessionStorage.getItem(REFRESH_KEY) ? "restoring" : "anonymous",
+  status: "restoring",
   notice: null,
+  logoutAllRequested: false,
 };
 
 function publish(patch) {
@@ -49,10 +55,6 @@ export function getAccessToken() {
 
 export function getGeneration() {
   return generation;
-}
-
-export function getRefreshToken() {
-  return sessionStorage.getItem(REFRESH_KEY);
 }
 
 export function isAccessTokenExpiring() {
@@ -95,7 +97,6 @@ function acceptTokens(data, expectedGeneration) {
 
   if (
     !data.accessToken ||
-    !data.refreshToken ||
     !data.member ||
     !Number.isFinite(lifetime) ||
     lifetime <= 0
@@ -103,15 +104,15 @@ function acceptTokens(data, expectedGeneration) {
     throw new Error("INVALID_AUTH_RESPONSE");
   }
 
-  sessionStorage.setItem(REFRESH_KEY, data.refreshToken);
-
   accessToken = data.accessToken;
 
   expiresAt = Date.now() + lifetime * 1000;
 
   publish({
     user: data.member,
+
     status: logoutPromise ? "signingOut" : "authenticated",
+
     notice: null,
   });
 
@@ -124,13 +125,53 @@ export function clearAuth(notice = null) {
   accessToken = null;
   expiresAt = 0;
 
-  sessionStorage.removeItem(REFRESH_KEY);
-
   publish({
     user: null,
     status: "anonymous",
     notice,
+    logoutAllRequested: false,
   });
+}
+
+export function clearBrowserAuth(notice = null) {
+  if (clearCookiePromise) {
+    return clearCookiePromise;
+  }
+
+  if (loginPromise || refreshPromise || logoutPromise) {
+    return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
+  }
+
+  const previousStatus = state.status;
+
+  publish({
+    status: "clearing",
+  });
+
+  clearCookiePromise = withAuthLock(async () => {
+    await authHttp.post("/members/clear-cookie");
+
+    clearAuth(notice);
+
+    return true;
+  })
+    .catch(() => {
+      publish({
+        status: previousStatus,
+        notice:
+          "인증 쿠키를 초기화하지 못했습니다. " +
+          "서버 연결 상태를 확인해 주세요.",
+      });
+      if (clearCookiePromise) {
+        return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
+      }
+      return false;
+    })
+    .finally(() => {
+      clearCookiePromise = null;
+    });
+
+  return clearCookiePromise;
 }
 
 // 로그인
@@ -180,6 +221,22 @@ export function signIn(email, password) {
   return loginPromise;
 }
 
+function withAuthLock(task) {
+  if (navigator.locks?.request) {
+    return navigator.locks.request(
+      "fixops-auth-session",
+      { mode: "exclusive" },
+      task,
+    );
+  }
+
+  return Promise.resolve().then(task);
+}
+
+export function retryLogout() {
+  return signOut(state.logoutAllRequested);
+}
+
 // 내부 공통 Refresh 구현
 function performRefresh(allowDuringLogout = false) {
   if (logoutPromise && !allowDuringLogout) {
@@ -191,20 +248,15 @@ function performRefresh(allowDuringLogout = false) {
     return refreshPromise;
   }
 
-  const token = getRefreshToken();
-
-  if (!token) {
-    clearAuth();
-
-    return Promise.reject(new Error("NO_REFRESH_TOKEN"));
-  }
-
   const currentGeneration = generation;
 
-  refreshPromise = authHttp
-    .post("/members/refresh", {
-      refreshToken: token,
-    })
+  refreshPromise = withAuthLock(() => {
+    if (generation !== currentGeneration) {
+      throw new Error("AUTH_GENERATION_CHANGED");
+    }
+
+    return authHttp.post("/members/refresh");
+  })
     .then((response) => {
       return acceptTokens(response.data.data, currentGeneration);
     })
@@ -215,11 +267,15 @@ function performRefresh(allowDuringLogout = false) {
         throw error;
       }
 
-      if (isInvalidSession(error)) {
-        clearAuth("세션이 만료되었거나 종료되었습니다. 다시 로그인해 주세요.");
+      const code = getAuthErrorCode(error);
+
+      if (code === "REFRESH_COOKIE_MISSING") {
+        clearAuth();
+      } else if (isInvalidSession(error)) {
+        clearAuth(
+          "세션이 만료되었거나 종료되었습니다. " + "다시 로그인해 주세요.",
+        );
       } else {
-        // 5xx, Timeout, 네트워크 장애 등은
-        // 세션 폐기가 확정된 것으로 판단하지 않는다.
         publish({
           status: logoutPromise
             ? "signingOut"
@@ -228,7 +284,7 @@ function performRefresh(allowDuringLogout = false) {
               : "unavailable",
 
           notice:
-            "인증 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+            "인증 서버에 연결하지 못했습니다. " + "잠시 후 다시 시도해 주세요.",
         });
       }
 
@@ -249,12 +305,6 @@ export function refreshAuth() {
 export function restoreAuth() {
   if (state.status === "authenticated") {
     return Promise.resolve(state.user);
-  }
-
-  if (!getRefreshToken()) {
-    clearAuth();
-
-    return Promise.resolve(null);
   }
 
   if (refreshPromise) {
@@ -286,7 +336,10 @@ export function signOut(all = false) {
   // Promise를 먼저 등록하여 이후 Refresh 진입을 차단한다.
   logoutPromise = Promise.resolve()
     .then(async () => {
-      publish({ status: "signingOut" });
+      publish({
+        status: "signingOut",
+        logoutAllRequested: all,
+      });
 
       // 진행 중인 Refresh가 있다면 결과가 확정될 때까지
       // 기다린 후 최신 토큰을 사용한다.
@@ -307,13 +360,7 @@ export function signOut(all = false) {
       if (all) {
         await authHttp.post("/members/logout-all", null, { headers });
       } else {
-        await authHttp.post(
-          "/members/logout",
-          {
-            refreshToken: getRefreshToken(),
-          },
-          { headers },
-        );
+        await authHttp.post("/members/logout", null, { headers });
       }
 
       clearAuth();
@@ -321,11 +368,10 @@ export function signOut(all = false) {
       return true;
     })
     .catch((error) => {
-      const notice =
-        "이 브라우저에서는 로그아웃되었습니다. " +
-        "다만 서버 세션 종료는 확인하지 못했습니다.";
-
-      clearAuth(notice);
+      publish({
+        status: "logoutFailed",
+        notice: "서버 로그아웃에 실패했습니다. " + "다시 시도해 주세요.",
+      });
 
       return false;
     })

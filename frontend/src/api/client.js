@@ -5,7 +5,6 @@ import {
   getAccessToken,
   getAuthErrorCode,
   getGeneration,
-  getRefreshToken,
   getSnapshot,
   isAccessTokenExpiring,
   refreshAuth,
@@ -43,35 +42,31 @@ api.interceptors.request.use(
   async (config) => {
     const currentGeneration = getGeneration();
 
-    if (getSnapshot().status === "signingOut") {
-      throw new Error("LOGOUT_IN_PROGRESS");
+    if (getSnapshot().status !== "authenticated") {
+      throw new Error("AUTH_NOT_READY");
     }
 
-    // 토큰이 만료되었거나 만료가 임박한 경우
-    // 보호 API 요청 전에 먼저 갱신한다.
-    if (getRefreshToken() && isAccessTokenExpiring()) {
+    if (isAccessTokenExpiring()) {
       await refreshAuth();
     }
 
-    // 갱신 도중 로그아웃 또는 사용자 변경이 발생한 경우
-    // 이전 사용자의 요청을 전송하지 않는다.
     if (
       currentGeneration !== getGeneration() ||
-      getSnapshot().status === "signingOut"
+      getSnapshot().status !== "authenticated"
     ) {
       throw new Error("AUTH_STATE_CHANGED");
     }
 
     const token = getAccessToken();
 
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    } else {
-      delete config.headers.Authorization;
+    if (!token) {
+      throw new Error("ACCESS_TOKEN_MISSING");
     }
 
-    // 응답 도착 시 요청 당시 인증 상태를 확인하기 위함.
+    config.headers.Authorization = `Bearer ${token}`;
+
     config._authGeneration = currentGeneration;
+
     config._sentAccessToken = token;
 
     return config;
@@ -85,7 +80,13 @@ api.interceptors.request.use(
 // ======================================================
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.config._authGeneration !== getGeneration()) {
+      return Promise.reject(new Error("AUTH_STATE_CHANGED"));
+    }
+
+    return response;
+  },
 
   async (error) => {
     const originalRequest = error.config;
@@ -102,7 +103,7 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    if (getSnapshot().status === "signingOut") {
+    if (getSnapshot().status !== "authenticated") {
       return Promise.reject(error);
     }
 
@@ -129,7 +130,7 @@ api.interceptors.response.use(
       status === 401 &&
       originalRequest._sentAccessToken &&
       !originalRequest._retry &&
-      getRefreshToken() &&
+      getSnapshot().status === "authenticated" &&
       canRetryRequest(originalRequest)
     ) {
       originalRequest._retry = true;
@@ -149,7 +150,7 @@ api.interceptors.response.use(
 
         if (
           originalRequest._authGeneration !== getGeneration() ||
-          getSnapshot().status === "signingOut"
+          getSnapshot().status !== "authenticated"
         ) {
           return Promise.reject(error);
         }
