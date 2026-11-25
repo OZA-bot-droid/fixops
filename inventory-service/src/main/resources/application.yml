@@ -19,6 +19,13 @@ spring:
     enabled: true             # 시작할 때 db/migration 의 V1, V2 ... 중 아직 적용 안 된 것을 순서대로 적용
     baseline-on-migrate: false  # 기록 없는 기존 DB 를 "이미 적용됨"으로 치지 않는다 (잘못된 테이블을 숨기지 않기 위해)
     locations: classpath:db/migration
+fixops:
+  workorder:
+    # ⚠️ 가짜(FAKE) WorkOrder 사용 여부. true 면 실제 WorkOrder 를 부르지 않고 FakeWorkOrderClient 가 대답한다.
+    #    로컬 개발·Postman 시험 전용. 기본은 false (연결 전이라 부품 사용 API 는 항상 503).
+    #    켜는 법: 환경 변수 WORKORDER_FAKE=true 로 서버 실행
+    fake: ${WORKORDER_FAKE:false}
+    fake-technician-id: ${WORKORDER_FAKE_TECHNICIAN_ID:1}   # ⚠️ 가짜가 "배정된 기사"라고 대답할 회원 번호
 management:
   endpoints:
     web:
