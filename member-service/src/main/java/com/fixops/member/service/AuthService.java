@@ -172,7 +172,7 @@ public class AuthService {
         Instant refreshExpiry = now.plus(Duration.ofDays(refreshDays));
         if (refreshExpiry.isAfter(session.expiresAt)) refreshExpiry = session.expiresAt;
         sessions.save(new RefreshSession(UUID.randomUUID(), session.id, member.id, sha(refresh), refreshExpiry));
-        return new TokenResult(access, refresh,accessMinutes * 60L, refreshExpiry,
+        return new TokenResult(access, refresh,accessMinutes * 60L, refreshExpiry, session.id,
                 Map.of("id", member.id, "email", member.email, "name", member.displayName,
                         "platformAdmin", member.platformAdmin, "memberships", orgs));
     }
