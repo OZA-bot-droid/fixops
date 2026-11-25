@@ -8,6 +8,8 @@ import com.fixops.inventory.part.exception.PartNotFoundException;
 import com.fixops.inventory.stock.exception.IdempotencyKeyReuseException;
 import com.fixops.inventory.stock.exception.InsufficientStockException;
 import com.fixops.inventory.stock.exception.StockNotFoundException;
+import com.fixops.inventory.stock.exception.WorkOrderNotFoundException;
+import com.fixops.inventory.stock.exception.WorkOrderNotInProgressException;
 import com.fixops.inventory.common.response.ErrorResponse;
 import jakarta.validation.ConstraintViolationException;
 import java.util.LinkedHashMap;
@@ -61,8 +63,8 @@ public class GlobalExceptionHandler {
         return respond(ErrorCode.ORG_ACCESS_DENIED, null, e);
     }
 
-    // 404: 부품 없음, 재고 행 없음 (예외 두 개를 한 메서드에서 처리)
-    @ExceptionHandler({PartNotFoundException.class, StockNotFoundException.class})
+    // 404: 부품 없음, 재고 행 없음, 작업 없음 (예외 여러 개를 한 메서드에서 처리)
+    @ExceptionHandler({PartNotFoundException.class, StockNotFoundException.class, WorkOrderNotFoundException.class})
     public ResponseEntity<ErrorResponse> handleNotFound(RuntimeException e) {
         return respond(ErrorCode.RESOURCE_NOT_FOUND, null, e);
     }
@@ -97,6 +99,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(PartInactiveException.class)
     public ResponseEntity<ErrorResponse> handlePartInactive(PartInactiveException e) {
         return respond(ErrorCode.PART_INACTIVE, null, e);
+    }
+
+    // 409: 진행 중이 아닌 작업에 부품 사용 (D8)
+    @ExceptionHandler(WorkOrderNotInProgressException.class)
+    public ResponseEntity<ErrorResponse> handleWorkOrderNotInProgress(WorkOrderNotInProgressException e) {
+        return respond(ErrorCode.WORK_ORDER_NOT_IN_PROGRESS, null, e);
+    }
+
+    // 503: WorkOrder 등 다른 서비스에 연결할 수 없음. 재고는 바꾸지 않았다 (D8)
+    @ExceptionHandler(DependencyUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleDependencyUnavailable(DependencyUnavailableException e) {
+        return respond(ErrorCode.DEPENDENCY_UNAVAILABLE, null, e);
     }
 
     // ===== 2. 입력값 오류 (400) =====

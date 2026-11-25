@@ -21,6 +21,9 @@ public enum ErrorCode {
 
     // docs/04 에 아직 없는 코드. 비활성 부품에는 입고할 수 없음 (docs/04 추가 요청 필요)
     PART_INACTIVE(HttpStatus.CONFLICT, "비활성 부품에는 입고할 수 없습니다."),
+
+    // docs/04 에 아직 없는 코드. 진행 중(IN_PROGRESS)인 작업에만 부품을 쓸 수 있음 (D8, docs/04 추가 요청 필요)
+    WORK_ORDER_NOT_IN_PROGRESS(HttpStatus.CONFLICT, "진행 중인 작업에만 부품을 사용할 수 있습니다."),
     DEPENDENCY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "잠시 후 다시 시도해 주세요."),
 
     // docs/04 에 없는 코드. 예상하지 못한 서버 오류용 (팀장 확인 필요)
