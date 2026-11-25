@@ -28,6 +28,10 @@
     {
       "key": "receiptKey",
       "value": ""
+    },
+    {
+      "key": "usageKey",
+      "value": ""
     }
   ],
   "item": [
@@ -1535,6 +1539,865 @@
               ]
             },
             "description": "01 에서 만든 부품의 quantity 가 입고한 만큼 늘었는지 확인. 42 재시도로는 늘지 않아야 한다."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. 부품 사용 (POST /usages) — ⚠️ 가짜 WorkOrder 필요",
+      "description": "D8. ⚠️ 서버를 WORKORDER_FAKE=true 로 실행해야 한다 (가짜 WorkOrder). 꺼져 있으면 51~62 는 모두 503.\n먼저 1번 '01 등록 성공', 4번 '41 입고 성공'을 실행해 재고가 있어야 한다. 51 → 52 → 53 순서로 실행.\n가짜 규칙: 작업 9001=COMPLETED, 9004=없음, 9503=장애, 그 밖=IN_PROGRESS·배정 기사 1번.",
+      "item": [
+        {
+          "name": "51 ADMIN 사용 성공 → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{usageKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{usageKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "811번 작업에 2개 사용. remainingQuantity 가 입고 후 수량 - 2 인지 확인."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 51~53 이 함께 쓰는 멱등 키. 51 을 실행할 때마다 새로 만든다.",
+                  "pm.collectionVariables.set('usageKey', 'usage-811-' + Date.now());"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "52 같은 키로 재시도 → 200 (추가 차감 없음)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{usageKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{usageKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "51 직후 그대로. usageId 가 51 과 같고 수량이 더 줄지 않아야 한다."
+          }
+        },
+        {
+          "name": "53 같은 키·다른 수량 → 409 IDEMPOTENCY_KEY_REUSE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{usageKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 5,\n  \"operationKey\": \"{{usageKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "51 의 키로 수량만 5."
+          }
+        },
+        {
+          "name": "54 재고 부족 → 409 INSUFFICIENT_STOCK",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 99999,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "남은 재고보다 많이."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "55 배정된 TECHNICIAN → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "TECHNICIAN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "가짜 WorkOrder 의 배정 기사는 1번(fake-technician-id). 1번 TECHNICIAN 은 사용 가능."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "56 배정 안 된 TECHNICIAN → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "2"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "TECHNICIAN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "2번 회원은 이 작업에 배정되지 않음."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "57 USER 가 사용 → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "부품 사용은 ADMIN, TECHNICIAN 만."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "58 끝난 작업(9001) → 409 WORK_ORDER_NOT_IN_PROGRESS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 9001,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "⚠️ 가짜 규칙: 9001 은 COMPLETED."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "59 없는 작업(9004) → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 9004,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "⚠️ 가짜 규칙: 9004 는 없는 작업."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "60 WorkOrder 장애(9503) → 503 DEPENDENCY_UNAVAILABLE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 9503,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "⚠️ 가짜 규칙: 9503 은 장애. 재고는 줄지 않아야 한다."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "61 없는 부품 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": 999999,\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "partId 999999."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "62 다른 단지에서 사용 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "999"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "X-Org-Id 999. 남의 단지 부품은 '없음'."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "63 헤더 키 ≠ 본문 키 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 2,\n  \"operationKey\": \"usage-different-key\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "64 수량 0 → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{k}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 0,\n  \"operationKey\": \"{{k}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "@Min(1) 검증."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 이 요청만 쓰는 새 멱등 키 (헤더와 본문에 같은 값이 들어간다)",
+                  "pm.variables.set('k', 'usage-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "65 사용 후 목록 확인 → 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/parts?q={{sku}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "parts"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "{{sku}}"
+                }
+              ]
+            },
+            "description": "입고 50 - 51(2) - 55(2) = 46 이어야 한다. 52 재시도와 실패한 요청으로는 줄지 않는다."
           }
         }
       ]

@@ -23,12 +23,19 @@ info:
       - 비활성(INACTIVE) 부품에는 입고할 수 없다: 409 PART_INACTIVE (docs/04 추가 요청 필요).
       - Idempotency-Key 헤더와 본문 operationKey 는 같은 값이어야 한다. 다르면 400.
 
+    D8 결정 사항 (2026-11-25)
+      - 부품 사용은 작업이 IN_PROGRESS 일 때만 가능: 그 밖은 409 WORK_ORDER_NOT_IN_PROGRESS (docs/04 추가 요청 필요).
+      - ADMIN 은 단지 안 모든 작업, TECHNICIAN 은 자기에게 배정된 작업만 (아니면 403).
+      - 작업이 없거나 다른 단지 작업이면 404. 부품이 없거나 다른 단지 부품이어도 404.
+      - 같은 operationKey 재시도는 WorkOrder 확인 없이 처음 결과를 200 으로 돌려준다.
+      - WorkOrder 조회 API 연결 전까지는 503. 개발용 가짜(FakeWorkOrderClient)는 설정으로만 켠다.
+
     미결 항목 (확정되면 본 문서에 반영)
       1. 비활성 부품과 같은 SKU 등록 시 동작. 본 문서는 409 + 기존 partId 안내로 제안.
       2. 재고가 남은 부품의 비활성화 허용 여부. 본 문서에는 비활성화 API 미포함(P0 제외 제안).
       3. (D7 확정) Idempotency-Key 헤더와 본문 operationKey 는 같은 값 필수. 입고·사용 모두 적용.
       4. 목록 응답 형식(content/page/size/totalElements) 통일 - Asset, WorkOrder와 협의 중.
-      5. WorkOrder 상태 조회 내부 API의 주소, 응답 필드, 서비스 간 인증 방식 - 박천보 협의 중.
+      5. WorkOrder 상태 조회 내부 API의 주소, 응답 필드(status, assignedTechnicianId, organizationId), 서비스 간 인증 방식 - 박천보 협의 중.
       6. 재고 반환 API는 docs/04 필수 API 목록에 없음. 추가에 대한 팀장 승인 필요.
 
 servers:
@@ -264,13 +271,16 @@ paths:
         '400': { $ref: '#/components/responses/InvalidInput' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403':
-          description: 배정되지 않은 작업이거나 조직 범위 밖
+          description: TECHNICIAN 이 자기에게 배정되지 않은 작업에 사용하려 함, 또는 허용되지 않은 역할
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: 재고 부족 또는 멱등 키 오용
+          description: |
+            INSUFFICIENT_STOCK         : 재고 부족
+            IDEMPOTENCY_KEY_REUSE      : 같은 operationKey 로 다른 내용
+            WORK_ORDER_NOT_IN_PROGRESS : 작업이 진행 중(IN_PROGRESS)이 아님
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }
@@ -360,6 +370,7 @@ components:
                 - IDEMPOTENCY_KEY_REUSE
                 - DUPLICATE_SKU
                 - PART_INACTIVE
+                - WORK_ORDER_NOT_IN_PROGRESS
                 - RATE_LIMITED
                 - DEPENDENCY_UNAVAILABLE
             message: { type: string }
