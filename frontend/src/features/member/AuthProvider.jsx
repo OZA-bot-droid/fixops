@@ -39,9 +39,11 @@ export function AuthProvider({ children }) {
       user: auth.user,
       status: auth.status,
       loading: auth.status === "restoring",
-      loggedIn: Boolean(auth.user),
+      loggedIn: auth.status === "authenticated" && Boolean(auth.user),
       signingIn: auth.status === "signingIn",
       signingOut: auth.status === "signingOut",
+      clearing: auth.status === "clearing",
+      logoutFailed: auth.status === "logoutFailed",
       unavailable: auth.status === "unavailable",
       authNotice: auth.notice,
 

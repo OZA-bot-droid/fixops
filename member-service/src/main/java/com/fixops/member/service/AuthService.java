@@ -191,6 +191,7 @@ public class AuthService {
             String refreshToken,
             long expiresIn,
             Instant refreshExpiresAt,
+            UUID sessionId,
             Map<String, Object> member
     ) {
         public Map<String, Object> publicBody() {
@@ -198,6 +199,7 @@ public class AuthService {
                     "accessToken", accessToken,
                     "tokenType", "Bearer",
                     "expiresIn", expiresIn,
+                    "sessionId", sessionId,
                     "member", member
             );
         }

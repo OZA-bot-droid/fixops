@@ -162,9 +162,6 @@ export function clearBrowserAuth(notice = null) {
           "인증 쿠키를 초기화하지 못했습니다. " +
           "서버 연결 상태를 확인해 주세요.",
       });
-      if (clearCookiePromise) {
-        return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
-      }
       return false;
     })
     .finally(() => {
@@ -176,6 +173,10 @@ export function clearBrowserAuth(notice = null) {
 
 // 로그인
 export function signIn(email, password) {
+  if (clearCookiePromise) {
+    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
+  }
+
   if (loginPromise) {
     return loginPromise;
   }
@@ -239,6 +240,10 @@ export function retryLogout() {
 
 // 내부 공통 Refresh 구현
 function performRefresh(allowDuringLogout = false) {
+  if (clearCookiePromise) {
+    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
+  }
+
   if (logoutPromise && !allowDuringLogout) {
     return Promise.reject(new Error("LOGOUT_IN_PROGRESS"));
   }
@@ -303,6 +308,10 @@ export function refreshAuth() {
 
 // 브라우저 새로고침 시 최초 인증 복원
 export function restoreAuth() {
+  if (clearCookiePromise) {
+    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
+  }
+
   if (state.status === "authenticated") {
     return Promise.resolve(state.user);
   }
@@ -325,6 +334,10 @@ export function restoreAuth() {
 
 // 단일 로그아웃 및 전체 로그아웃
 export function signOut(all = false) {
+  if (clearCookiePromise) {
+    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
+  }
+
   if (logoutPromise) {
     return logoutPromise;
   }
