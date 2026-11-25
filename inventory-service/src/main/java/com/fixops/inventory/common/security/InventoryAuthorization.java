@@ -25,6 +25,15 @@ public class InventoryAuthorization {
         return member;
     }
 
+    /**
+     * 부품 사용(차감): ADMIN 또는 TECHNICIAN (D8).
+     * 여기서는 역할만 본다. TECHNICIAN 이 "자기에게 배정된 작업"인지는 WorkOrder 정보가 있어야 알 수 있어서
+     * StockService.use() 에서 확인한다.
+     */
+    public CurrentMember requireUsage(Long memberId, String role, Long organizationId) {
+        return requireRead(memberId, role, organizationId);   // 허용 역할이 조회와 같다 (ADMIN, TECHNICIAN)
+    }
+
     /** 부품 등록·입고: ADMIN 만 (OpenAPI 계약) */
     public CurrentMember requireAdmin(Long memberId, String role, Long organizationId) {
         CurrentMember member = requireLogin(memberId, role, organizationId);
