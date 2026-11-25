@@ -12,9 +12,8 @@ import {
   UnavailablePage,
 } from "../features/member/Pages";
 
-function Protected({ children, platform = false }) {
+function AuthLifecycleGate({ children }) {
   const {
-    user,
     loading,
     signingOut,
     clearing,
@@ -158,6 +157,20 @@ function Protected({ children, platform = false }) {
   return children;
 }
 
+function Protected({ children, platform = false }) {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (platform && !user.platformAdmin) {
+    return <Navigate to="/member" replace />;
+  }
+
+  return children;
+}
+
 function AuthNotice() {
   const { authNotice, dismissNotice } = useAuth();
 
@@ -197,53 +210,64 @@ export default function App() {
   return (
     <AuthProvider>
       <AuthNotice />
-      <Routes>
-        <Route path="/" element={<Navigate to="/member" replace />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignupPage />} />
-        <Route path="/forgot-password" element={<PasswordResetPage />} />
-        <Route
-          element={
-            <Protected>
-              <AppLayout />
-            </Protected>
-          }
-        >
-          <Route path="/member" element={<MemberHome />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/organizations/apply" element={<OrganizationApply />} />
+      <AuthLifecycleGate>
+        <Routes>
+          <Route path="/" element={<Navigate to="/member" replace />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/forgot-password" element={<PasswordResetPage />} />
           <Route
-            path="/organizations/join"
-            element={<UnavailablePage title="조직 가입·초대 수락" />}
-          />
+            element={
+              <Protected>
+                <AppLayout />
+              </Protected>
+            }
+          >
+            <Route path="/member" element={<MemberHome />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route
+              path="/organizations/apply"
+              element={<OrganizationApply />}
+            />
+            <Route
+              path="/organizations/join"
+              element={<UnavailablePage title="조직 가입·초대 수락" />}
+            />
+            <Route
+              path="/members/manage"
+              element={<UnavailablePage title="회원·역할 관리" />}
+            />
+            <Route
+              path="/audit"
+              element={<UnavailablePage title="권한 변경 감사 로그" />}
+            />
+            <Route path="/asset" element={<ComingSoon name="설비·위치" />} />
+            <Route
+              path="/workorder"
+              element={<ComingSoon name="작업 관리" />}
+            />
+            <Route path="/booking" element={<ComingSoon name="예약 일정" />} />
+            <Route
+              path="/inventory"
+              element={<ComingSoon name="부품·재고" />}
+            />
+            <Route path="/ai" element={<ComingSoon name="AI 점검센터" />} />
+          </Route>
           <Route
-            path="/members/manage"
-            element={<UnavailablePage title="회원·역할 관리" />}
-          />
-          <Route
-            path="/audit"
-            element={<UnavailablePage title="권한 변경 감사 로그" />}
-          />
-          <Route path="/asset" element={<ComingSoon name="설비·위치" />} />
-          <Route path="/workorder" element={<ComingSoon name="작업 관리" />} />
-          <Route path="/booking" element={<ComingSoon name="예약 일정" />} />
-          <Route path="/inventory" element={<ComingSoon name="부품·재고" />} />
-          <Route path="/ai" element={<ComingSoon name="AI 점검센터" />} />
-        </Route>
-        <Route
-          element={
-            <Protected platform>
-              <AppLayout />
-            </Protected>
-          }
-        >
-          <Route
-            path="/platform/organizations"
-            element={<PlatformOrganizations />}
-          />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+            element={
+              <Protected platform>
+                <AppLayout />
+              </Protected>
+            }
+          >
+            <Route
+              path="/platform/organizations"
+              element={<PlatformOrganizations />}
+            />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthLifecycleGate>
     </AuthProvider>
   );
 }

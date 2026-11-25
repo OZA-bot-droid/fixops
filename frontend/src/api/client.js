@@ -81,7 +81,10 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   (response) => {
-    if (response.config._authGeneration !== getGeneration()) {
+    if (
+      response.config._authGeneration !== getGeneration() ||
+      getSnapshot().status !== "authenticated"
+    ) {
       return Promise.reject(new Error("AUTH_STATE_CHANGED"));
     }
 
