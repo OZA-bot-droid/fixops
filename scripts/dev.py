@@ -28,7 +28,10 @@ def init():
     if CRED.exists():
         print('.env 유지: 기존 DB 비밀번호를 변경하지 않습니다')
     else:
-        data={'POSTGRES_PASSWORD':secrets.token_hex(24)}
+        data={
+            'POSTGRES_PASSWORD':secrets.token_hex(24),
+            'REDIS_PASSWORD':secrets.token_hex(24),
+            }
         for n in DBS:data[n.upper()+'_DB_PASSWORD']=secrets.token_hex(24)
         template=(ROOT/'.env.example').read_text(encoding='utf-8')
         for k,v in data.items(): template=re.sub(rf'(?m)^{k}=.*$',f'{k}={v}',template)
@@ -55,6 +58,16 @@ def env_for(service,integrate=False):
     env['APP_ENV']='integration' if integrate else 'local'
     env['JWT_PRIVATE_KEY_PATH']=str(KEYS/'private_key.pem')
     env['JWT_PUBLIC_KEY_PATH']=str(KEYS/'public_key.pem')
+    # Redis configuration for local Java services
+    if service in ('member', 'gateway'):
+        redis_password = vals.get('REDIS_PASSWORD', '')
+        if (not redis_password or redis_password.startswith('REPLACE_')):
+            die('REDIS_PASSWORD를 .env에 설정하세요')
+        redis_host = (os.environ.get('INTEGRATION_REDIS_HOST',host)
+            if integrate else vals.get('REDIS_HOST','127.0.0.1'))
+        env.update(REDIS_HOST=redis_host, REDIS_PORT=vals.get('REDIS_PORT','6379'),
+            REDIS_PASSWORD=redis_password,
+        )
     if service in DBS:
         name=DBS[service]
         env.update(DB_URL=f'jdbc:postgresql://{host}:5432/{name}',DB_USER=ROLES[service],DB_PASSWORD=vals[service.upper()+'_DB_PASSWORD'])
@@ -118,8 +131,11 @@ def check_db():
 
 def print_env(service,integ):
     env=env_for(service,integ)
-    for name in ['APP_ENV','SPRING_PROFILES_ACTIVE','DB_URL','DB_USER','JWT_PUBLIC_KEY_PATH','WORKORDER_GRPC_TARGET']:
+    names=['APP_ENV','SPRING_PROFILES_ACTIVE','DB_URL','DB_USER','JWT_PUBLIC_KEY_PATH','WORKORDER_GRPC_TARGET','REDIS_HOST','REDIS_PORT',]
+    for name in names:
         if name in env:print(name+'='+env[name])
+    if service in ('member','gateway'):
+        print('REDIS_PASSWORD='+('CONFIGURED' if env.get('REDIS_PASSWORD') else 'MISSING'))
     print('DB_PASSWORD / DATABASE_URL / JWT 개인키 값은 화면에 표시하지 않습니다')
 
 def launch_service(service,integ):
