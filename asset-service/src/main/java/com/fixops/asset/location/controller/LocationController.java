@@ -37,36 +37,30 @@ public class LocationController {
 
     @GetMapping
     public List<LocationResponse> list(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @RequestParam @Positive Long organizationId,
             @RequestParam(required = false) @Positive Long complexId) {
-        authorization.requireRead(memberId, role, memberOrganizationId, organizationId);
+        authorization.requireRead(bearer, organizationId, complexId);
         return locations.list(organizationId, complexId);
     }
 
     @PostMapping
     public ResponseEntity<LocationResponse> create(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @Valid @RequestBody LocationCreateRequest request) {
-        authorization.requireWrite(memberId, role, memberOrganizationId, request.organizationId());
+        authorization.requireWrite(bearer, request.organizationId(), request.complexId());
         LocationResponse created = locations.create(request);
         return ResponseEntity.created(URI.create("/api/locations/" + created.id())).body(created);
     }
 
     @PutMapping("/{id}")
     public LocationResponse update(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @PathVariable @Positive Long id,
             @RequestParam @Positive Long organizationId,
             @RequestParam(required = false) @Positive Long complexId,
             @Valid @RequestBody LocationUpdateRequest request) {
-        authorization.requireWrite(memberId, role, memberOrganizationId, organizationId);
+        authorization.requireWrite(bearer, organizationId, complexId);
         return locations.update(id, organizationId, complexId, request);
     }
 }
