@@ -12,7 +12,7 @@
 
 | P0 필수 | P1 선택적 고도화 | P2 제외 |
 |---|---|---|
-| 조직 심사·JWT/RBAC·K-apt 단지 식별·XLSX 명부·입주민 검증 | XLS·자유 매핑·AI SSE·고급 감사 UI | 사업자등록 검증, RabbitMQ, Redis |
+| 조직 심사·JWT/RBAC·Redis 세션·K-apt 단지 식별·XLSX 명부·입주민 검증 | XLS·자유 매핑·AI SSE·고급 감사 UI | 사업자등록 검증, RabbitMQ |
 | Asset·Location·WorkOrder·단일 예약·Inventory | 관리권 이전 전용 UI·반복 예약·고급 차트 | Kubernetes, 자동 부품 발주 |
 | FastAPI·LangChain·MCP·RAG·gRPC 조회 단일 RPC·Jaeger 핵심 Trace | 통계 고도화·모바일 경험 확장 | 다중 AI Agent·IoT 예지보전 |
 | Docker Compose AWS 시연, 조직·세대 격리, E2E | ECS 이행 자동화 | 전체 gRPC 전환 |
@@ -21,8 +21,8 @@
 
 | 컴포넌트 | 책임 | DB | 담당 |
 |---|---|---|---|
-| Gateway :8080 | JWT 검증, 라우팅, 외부 신원 헤더 제거 | 없음 | 오좌언 |
-| Member :8081 | Member/Org/Complex/ACL/Roster/Invite/OTP | member_db | 오좌언 |
+| Gateway :8080 | JWT 및 Redis 활성 SID 검증, 라우팅, 외부 신원 헤더 제거 | 없음 | 오좌언 |
+| Member :8081 | Member/Org/Complex/ACL/Roster/Invite/이메일 인증·주민 등록 코드 | member_db | 오좌언 |
 | Asset :8082 | Location, Asset, Category | asset_db | 이도형 |
 | WorkOrder :8083, gRPC :9093 | 신고/배정/상태/예약/충돌 | workorder_db | 박천보 |
 | Inventory :8084 | 부품·잔액·원장·사용 | inventory_db | 이도관 |
@@ -36,6 +36,11 @@ flowchart TB
  NG --> GW[Gateway]
  GW --> ME[Member] & AS[Asset] & WO[WorkOrder] & IV[Inventory] & AI[FastAPI AI]
  ME --> MDB[(member_db)]
+ ME --> RS[(Redis 활성 세션)]
+ GW --> RS
+ ME --> SMTP[Gmail SMTP]
+ ME -.-> SMS[선택적 SMS 발송 Provider]
+ ME -->|UNIT 조회| AS
  AS --> ADB[(asset_db)]
  WO --> WDB[(workorder_db)]
  IV --> IDB[(inventory_db)]
@@ -62,8 +67,9 @@ flowchart TB
 - 사용자 역할은 소속 단위 `ADMIN/TECHNICIAN/USER`, 단지·세대 접근은 별도 스코프. 플랫폼 관리자는 민감 업무 데이터 접근이 자동 허용되지 않음.
 - 공장 조직은 K-apt·동/호수·입주민 명부 정책을 강제하지 않음.
 - K-apt 단지코드는 신원 증명이 아니라 물리 단지 중복 판별값. API 미조회 단지는 수동 심사.
-- 입주민은 명부와 연락처 확인 후 자동 연결 가능; 이름·동·호수만으로 자동 승인 금지.
-- 이사·퇴거·조직 역할 회수 시 세대 접근 즉시 정지, Refresh 세션 회수 및 민감 API 상태 재검증.
+- 입주민은 관리 단지 ADMIN의 사전 본인 확인 후 발급된 일회용 등록 코드(기본) 또는 활성화된 SMS OTP(선택)로 증명한다. 활성 명부·미연결·Asset UNIT 및 조직 소속 조건 충족 시 자동 연결 가능; 이름·동·호수만으로 자동 승인 금지.
+- 이사·퇴거·조직 역할 회수 시 세대 접근 정지, Refresh/Redis 세션 회수 및 민감 API 상태 재검증. 명시적 명부 퇴거는 진행 중 신청과 미사용 코드도 무효화한다.
+- 계정 이메일 인증과 주민 거주 확인은 별개이다. Gmail SMTP는 이메일 발송만 담당한다. 상세 정책은 03, 물리 스키마는 02, API는 04 v1.1 참조. Redis 세션은 09/10 참조.
 
 ## 4. 업무 생명주기
 
@@ -96,9 +102,9 @@ flowchart TB
 |---|---|
 | 공개/계정 | 로그인, 회원가입, 이메일 확인, 조직 검색/가입 요청, 승인대기 |
 | PLATFORM_ADMIN | 조직 개설 신청 목록·승인·거절, 중복 단지 심사 |
-| 조직 ADMIN | 조직/단지 관리, 팀원 초대·승인, XLSX Import, 설비/위치, 작업 배정, 예약, 재고 |
+| 조직 ADMIN | 조직/단지 관리, 팀원 초대·승인, XLSX Import, 주민 등록 코드 발급·회수 및 심사, 설비/위치, 작업 배정, 예약, 재고 |
 | TECHNICIAN | 배정 작업, 방문 일정, 작업 상태, 부품 사용, AI |
-| USER | 단지·세대 연결, 본인 신고, 예약 확인/요청, AI 허용 조회 |
+| USER | 단지·세대 연결(등록 코드 기본, SMS 선택), 본인 신고, 예약 확인/요청, AI 허용 조회 |
 
 - React Router 가드와 화면 숨김은 UX; 실제 권한 검사는 Java API.
 - Tailwind CSS4 `@theme` 디자인 토큰, 공통 Button/Modal/Input/Table/Layout만 사용, SCSS/CSS Modules 비도입.
