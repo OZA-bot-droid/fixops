@@ -217,28 +217,71 @@ public class WorkOrderService {
 
     // 작업 상태 변경
     public WorkOrderResponseDTO changeWorkOrderStatus(Long id, WorkOrderStatusDTO dto, Long userId) {
+
+        // 1. 기본 입력값 검증
         validateUserId(userId);
         validateStatusFields(dto);
-        WorkOrder workOrder = findWorkOrder(id);
+
+
+        // 2. WorkOrder 비관적 락 조회
+        WorkOrder workOrder = findWorkOrderForUpdate(id);
+
+
+        // 3. 버전 검증
         validateVersion(workOrder, dto.getExpectedVersion());
+
+
+        // 4. 상태 전이 가능 여부 검증
         validateStatusTransition(workOrder, dto.getStatus());
 
-        // TODO: Member 연동 - ADMIN/TECHNICIAN/신고자 권한과 해당 작업 배정 관계 확인
 
+        // TODO: Member 서비스 연동
+        // ADMIN / TECHNICIAN / 신고자 권한 검증
+        // 해당 작업의 조직·단지 및 배정 관계 검증
+
+
+        // 5. 기존 상태와 변경할 상태
         WorkOrderStatus previous = workOrder.getStatus();
 
-        // 연결된 Report 행을 잠그고 상태 동기화
-        syncReportStatus(workOrder.getId(), dto.getStatus());
+        WorkOrderStatus next = dto.getStatus();
 
-        // WorkOrder 상태 변경
-        workOrder.changeStatus(dto.getStatus());
 
-        // 변경 이력 저장
-        workOrderHistoryRepository.save(new WorkOrderHistory(workOrder.getId(), previous, dto.getStatus(), userId));
+        // 6. WorkOrder 상태 변경에 따른 Booking 정합성 처리
+        switch (next) {
 
-        // SQL 실행 및 낙관적 락 충돌 조기 감지
+            // 작업지시 취소 - 활성 예약이 존재하면 먼저 예약을 취소
+            case CANCELLED -> bookingLifecycleService.cancelForWorkOrderCancellation(workOrder, userId);
+
+
+            // 작업지시 완료 - 활성 예약이 존재하면 BusinessException을 발생 - > Report와 WorkOrder의 상태 변경 및 이력 저장까지 진행 X
+            case COMPLETED -> bookingLifecycleService.validateNoActiveScheduleForCompletion(workOrder);
+
+
+            // 나머지 상태 변경
+            default -> {
+
+                // 예약에 대한 별도 변경 없음
+            }
+        }
+
+
+        // 7. 연결된 Report 상태 동기화
+        syncReportStatus(workOrder.getId(), next);
+
+
+        // 8. WorkOrder 상태 변경
+        workOrder.changeStatus(next);
+
+
+        // 9. 상태 변경 이력 저장
+        workOrderHistoryRepository.save(new WorkOrderHistory(workOrder.getId(), previous, next, userId));
+
+
+        // 10. 변경사항 DB 반영 및 버전 충돌 확인
         workOrderRepository.flush();
 
+
+        // 11. 변경된 작업지시 응답 반환
         return WorkOrderResponseDTO.fromEntity(workOrder);
     }
 
