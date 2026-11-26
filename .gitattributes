@@ -4,3 +4,8 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.sql text eol=lf
+
+# Gradle Wrapper
+gradlew text eol=lf
+gradlew.bat text eol=crlf
+*.jar binary
