@@ -5,6 +5,7 @@
 --
 -- 다섯 개 모두 "0 rows" 가 나와야 정상이다. 한 줄이라도 나오면 그 부품·키에서 정합성이 깨진 것이다.
 
+-- 결과를 증명합니다 (장부가 맞는지 DB에서 확인)
 \echo '1) 재고와 원장의 합이 다른 부품 (재고 = 원장의 합이어야 함)'
 SELECT p.id AS part_id, p.sku, b.quantity AS balance,
        COALESCE(SUM(m.quantity_delta), 0) AS ledger_sum

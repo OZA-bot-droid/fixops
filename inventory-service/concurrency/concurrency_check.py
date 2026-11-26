@@ -11,6 +11,7 @@
   3) 끝나면 ledger_check.sql 로 DB 를 직접 확인 (스크립트가 마지막에 명령을 알려 줌)
 
 Python 기본 라이브러리만 쓴다 (설치할 것 없음). 매번 새 부품을 만들어 쓰므로 여러 번 돌려도 된다.
+# 상황을 만듭니다 (동시에 몰아서 보냄)
 """
 
 from __future__ import annotations
