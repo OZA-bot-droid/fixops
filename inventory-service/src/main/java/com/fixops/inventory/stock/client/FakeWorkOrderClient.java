@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  * 박천보님 API 가 연결되기 전에 부품 사용(차감) 흐름을 시험해 보려고 만들었다.
  *
  * 켜는 법   : application.yml 의 fixops.workorder.fake=true (또는 환경 변수 WORKORDER_FAKE=true)
- * 기본값    : false (꺼짐). 꺼져 있으면 UnconnectedWorkOrderClient 가 쓰여 항상 503 이 된다.
+ * 기본값    : false (꺼짐). 꺼져 있으면 HttpWorkOrderClient 가 실제 WorkOrder 를 부른다.
  *
  * 가짜 응답 규칙 (Postman "5. 부품 사용" 폴더가 이 규칙을 쓴다)
  *   workOrderId 9001 → 상태 COMPLETED (부품 사용 불가 → 409 시험용)
@@ -23,7 +23,10 @@ import org.springframework.stereotype.Component;
  *   workOrderId 9503 → WorkOrder 장애 (→ 503 시험용)
  *   그 밖의 번호     → 상태 IN_PROGRESS, 요청한 단지 소속, 배정 기사 = fixops.workorder.fake-technician-id (기본 1)
  *
- * TODO: 실제 WorkOrder 연결이 끝나면 이 클래스는 삭제한다.
+ * TODO: 삭제 조건 (D11 결정)
+ *   1) 실제 WorkOrder 로 부품 사용 201/404/403/409/503 을 Postman 으로 확인
+ *   2) concurrency_check.py 를 실제 IN_PROGRESS 작업으로 바꿈
+ *   3) 그 뒤 이 파일과 application.yml 의 fake 설정 두 줄을 삭제 (늦어도 D15 전)
  */
 @Component
 @ConditionalOnProperty(name = "fixops.workorder.fake", havingValue = "true")
@@ -40,7 +43,8 @@ public class FakeWorkOrderClient implements WorkOrderClient {
     }
 
     @Override
-    public Optional<WorkOrderInfo> findWorkOrder(long organizationId, long workOrderId) {
+    public Optional<WorkOrderInfo> findWorkOrder(long organizationId, long workOrderId, WorkOrderCaller caller) {
+        // ⚠️ 가짜: caller(누가 묻는지)는 쓰지 않는다. 실제 구현만 WorkOrder 에 전달한다.
         // ⚠️ 가짜 규칙: 아래 번호들은 실패 경우를 시험하기 위한 약속된 값이다.
         if (workOrderId == 9004L) {
             return Optional.empty();

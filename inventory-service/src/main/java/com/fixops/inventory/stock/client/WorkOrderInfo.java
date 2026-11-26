@@ -8,7 +8,8 @@ package com.fixops.inventory.stock.client;
  *                        IN_PROGRESS 일 때만 부품을 쓸 수 있다 (D8 결정)
  * assignedTechnicianId : 배정된 기사. TECHNICIAN 은 자기에게 배정된 작업에만 부품을 쓸 수 있다 (없으면 null)
  *
- * 실제 응답 필드 이름은 박천보님과 확정 후 맞춘다.
+ * WorkOrder 응답에서는 배정 기사가 assignedTo 라는 이름으로 온다.
+ * HttpWorkOrderClient 가 받아서 assignedTechnicianId 로 바꿔 담는다 (D11). 우리 쪽 이름은 그대로 둔다.
  */
 public record WorkOrderInfo(
         long workOrderId,
