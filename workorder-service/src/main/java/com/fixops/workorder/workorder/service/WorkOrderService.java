@@ -10,6 +10,7 @@ import com.fixops.workorder.workorder.dto.*;
 import com.fixops.workorder.workorder.repository.WorkOrderAssignmentHistoryRepository;
 import com.fixops.workorder.workorder.repository.WorkOrderHistoryRepository;
 import com.fixops.workorder.workorder.repository.WorkOrderRepository;
+import com.fixops.workorder.booking.service.BookingLifecycleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,6 +31,7 @@ public class WorkOrderService {
     private final WorkOrderRepository workOrderRepository;
     private final WorkOrderHistoryRepository workOrderHistoryRepository;
     private final WorkOrderAssignmentHistoryRepository workOrderAssignmentHistoryRepository;
+    private final BookingLifecycleService bookingLifecycleService;
 
     // 작업지시 작성
     public WorkOrderResponseDTO createWorkOrder(WorkOrderSaveDTO dto, Long userId) {
@@ -140,42 +142,76 @@ public class WorkOrderService {
 
     // 작업자 배정 또는 재배정
     public WorkOrderResponseDTO assignWorkOrder(Long id, WorkOrderAssignDTO dto, Long userId) {
+
+        // 1. 기본 입력값 검증
         validateUserId(userId);
         validateAssignFields(dto);
-        WorkOrder workOrder = findWorkOrder(id);
+
+
+        // 2. WorkOrder 비관적 락 조회
+        WorkOrder workOrder = findWorkOrderForUpdate(id);
+
+
+        // 3. 버전 및 배정 가능한 상태 검증
         validateVersion(workOrder, dto.getExpectedVersion());
+
         validateAssignableStatus(workOrder);
 
-        // TODO: Member 연동 - userId의 ADMIN 권한, technicianId의 TECHNICIAN 역할/조직/단지 검증
+
+        // TODO: Member 서비스 연동
+        // 요청자의 ADMIN 권한 검증
+        // 배정 대상 TECHNICIAN 역할 및 조직·단지 검증
+
+
+        // 4. 기존 담당 기술자 ID
         Long previousTechnicianId = workOrder.getAssignedTo();
 
+
+        // 5. 최초 배정 여부
         boolean initialAssign = workOrder.getStatus() == WorkOrderStatus.REPORTED;
 
-        // 연결된 Report 행을 잠그고 ASSIGNED로 상태 동기화
-        if (initialAssign) {
-            syncReportStatus(workOrder.getId(), WorkOrderStatus.ASSIGNED);
-        }
 
-        // 이미 같은 작업자에게 배정되어 있다면 변경 거부
+        // 6. 이미 같은 기술자에게 배정되어 있다면 거부
         if (Objects.equals(previousTechnicianId, dto.getTechnicianId())) {
+
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
 
-        workOrder.assign(dto.getTechnicianId());
 
-        // 최초 배정: 상태 변경 이력
-        if (initialAssign) {
-            workOrderHistoryRepository.save(new WorkOrderHistory(workOrder.getId(), WorkOrderStatus.REPORTED, WorkOrderStatus.ASSIGNED, userId));
+        // 7. 재배정이라면 기존 활성 예약 자동 취소
+        if (!initialAssign) {
 
+            bookingLifecycleService.cancelForReassignment(workOrder, userId);
         }
 
-        // 최초 배정 및 재배정 모두 기록
+
+        // 8. 최초 배정 시 연결된 Report 상태 동기화
+        if (initialAssign) {
+
+            syncReportStatus(workOrder.getId(), WorkOrderStatus.ASSIGNED);
+        }
+
+
+        // 9. WorkOrder 담당 기술자 배정 또는 재배정
+        workOrder.assign(dto.getTechnicianId());
+
+
+        // 10. 최초 배정 시 상태 변경 이력 저장
+        if (initialAssign) {
+
+            workOrderHistoryRepository.save(new WorkOrderHistory(workOrder.getId(), WorkOrderStatus.REPORTED, WorkOrderStatus.ASSIGNED, userId));
+        }
+
+
+        // 11. 최초 배정 및 재배정 이력 저장
         workOrderAssignmentHistoryRepository.save(new WorkOrderAssignmentHistory(workOrder.getId(), previousTechnicianId, dto.getTechnicianId(), userId));
 
-        // ASSIGNED 상태 재배정 시 상태는 그대로이고, 상태 변경 이력은 생성하지 않음
+
+        // 12. 변경사항 DB 반영 및 버전 충돌 확인
         workOrderRepository.flush();
 
 
+        // 13. 변경된 작업지시 응답 반환
         return WorkOrderResponseDTO.fromEntity(workOrder);
     }
 
@@ -282,7 +318,19 @@ public class WorkOrderService {
     }
 
 
+    // 작업지시 상태 변경용 비관적 락 조회
+    private WorkOrder findWorkOrderForUpdate(Long id) {
 
+        // 작업지시 ID 유효성 검증
+        if (id == null || id <= 0) {
+
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+
+
+        // WorkOrder 행에 비관적 쓰기 잠금 획득
+        return workOrderRepository.findByIdForUpdate(id).orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
 
 
     //    ==============================
