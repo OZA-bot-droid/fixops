@@ -21,9 +21,17 @@ spring:
     locations: classpath:db/migration
 fixops:
   workorder:
+    # 실제 WorkOrder 호출 설정 (D11, HttpWorkOrderClient)
+    #   직접 호출   : url=http://127.0.0.1:8083 (Docker 안에서는 http://workorder:8083), base-path=/work-orders
+    #   Gateway 경유: url=Gateway 주소, base-path=/api/work-orders
+    url: ${WORKORDER_SERVICE_URL:http://127.0.0.1:8083}   # dev.py 가 이미 이 이름으로 넘겨준다
+    base-path: ${WORKORDER_BASE_PATH:/work-orders}
+    connect-timeout-ms: ${WORKORDER_CONNECT_TIMEOUT_MS:2000}  # 연결 대기 2초 (Asset 과 같은 값)
+    read-timeout-ms: ${WORKORDER_READ_TIMEOUT_MS:3000}        # 응답 대기 3초. 넘으면 503, 차감하지 않음
     # ⚠️ 가짜(FAKE) WorkOrder 사용 여부. true 면 실제 WorkOrder 를 부르지 않고 FakeWorkOrderClient 가 대답한다.
-    #    로컬 개발·Postman 시험 전용. 기본은 false (연결 전이라 부품 사용 API 는 항상 503).
+    #    로컬 개발·Postman 시험 전용. 기본은 false (실제 WorkOrder 를 부른다).
     #    켜는 법: 환경 변수 WORKORDER_FAKE=true 로 서버 실행
+    #    TODO: 실제 연결 확인 후 아래 두 줄과 FakeWorkOrderClient 를 삭제 (늦어도 D15 전)
     fake: ${WORKORDER_FAKE:false}
     fake-technician-id: ${WORKORDER_FAKE_TECHNICIAN_ID:1}   # ⚠️ 가짜가 "배정된 기사"라고 대답할 회원 번호
 management:
