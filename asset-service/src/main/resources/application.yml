@@ -20,3 +20,12 @@ management:
     web:
       exposure:
         include: health,info
+
+fixops:
+  building-register:
+    service-key: ${BUILDING_REGISTER_SERVICE_KEY:}
+  member:
+    url: ${MEMBER_SERVICE_URL:http://127.0.0.1:8081}
+  internal:
+    asset-authz-key: ${ASSET_AUTHZ_KEY:}
+    member-unit-key: ${MEMBER_UNIT_INTERNAL_KEY:}

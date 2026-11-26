@@ -1,28 +1,9 @@
 import axios from "axios";
 
 const REFRESH_BUFFER_MS = 30_000;
-
-// 일반 API Interceptor와 분리된 인증 전용 Axios.
-// Refresh 요청이 다시 Refresh를 호출하는 재귀 문제를 방지한다.
-export const authHttp = axios.create({
-  baseURL: "/api",
-  timeout: 10000,
-  withCredentials: true,
-
-  headers: {
-    "X-FixOps-CSRF": "1",
-  },
-});
-
-const listeners = new Set();
-
-const AUTH_CHANNEL_NAME = "fixops-auth";
-
-const authChannel =
-  typeof BroadcastChannel !== "undefined"
-    ? new BroadcastChannel(AUTH_CHANNEL_NAME)
-    : null;
-
+const AUTH_LOCK = "fixops-auth-session";
+const REAUTH_KEY = "fixops_reauth_required";
+const LEGACY_PENDING_KEY = "fixops_logout_pending";
 const AUTH_EVENT = Object.freeze({
   LOGIN: "LOGIN",
   LOGOUT: "LOGOUT",
@@ -30,17 +11,48 @@ const AUTH_EVENT = Object.freeze({
   COOKIE_CLEARED: "COOKIE_CLEARED",
 });
 
-const LOGOUT_PENDING_KEY = "fixops_logout_pending";
+// 인증 요청은 일반 API Interceptor를 사용하지 않는다.
+export const authHttp = axios.create({
+  baseURL: "/api",
+  timeout: 10000,
+  withCredentials: true,
+  headers: {
+    "Content-Type": "application/json",
+    "X-FixOps-CSRF": "1",
+  },
+});
+
+const listeners = new Set();
+let authChannel = null;
+try {
+  if (typeof BroadcastChannel !== "undefined") {
+    authChannel = new BroadcastChannel("fixops-auth");
+  }
+} catch {
+  // BroadcastChannel이 불가능해도 서버 SID 검증은 유지한다.
+}
 
 let accessToken = null;
 let expiresAt = 0;
 let refreshPromise = null;
 let loginPromise = null;
 let logoutPromise = null;
-let clearCookiePromise = null;
-
-// 이전 인증 세대에서 도착한 응답을 무효화하기 위한 번호.
 let generation = 0;
+let lastLocalMutation = 0;
+let restoreBlock = null;
+
+// 인증 비밀값은 저장하지 않는다. F5 후 자동 복원만 차단하는 표시다.
+// 이전 버전의 복구 의도는 자동 재시도하지 않고 재로그인으로 전환한다.
+try {
+  restoreBlock = sessionStorage.getItem(REAUTH_KEY);
+  if (sessionStorage.getItem(LEGACY_PENDING_KEY)) {
+    restoreBlock = "logout-pending";
+    sessionStorage.setItem(REAUTH_KEY, restoreBlock);
+    sessionStorage.removeItem(LEGACY_PENDING_KEY);
+  }
+} catch {
+  // Storage 제한 환경에서는 현재 페이지 메모리 범위에서만 차단된다.
+}
 
 let state = {
   user: null,
@@ -48,160 +60,118 @@ let state = {
   status: "restoring",
   notice: null,
   logoutAllRequested: false,
-  logoutIntent: null,
 };
 
 function publish(patch) {
   state = { ...state, ...patch };
-
   listeners.forEach((listener) => listener());
 }
 
-function saveLogoutIntent(intent) {
-  sessionStorage.setItem(LOGOUT_PENDING_KEY, JSON.stringify(intent));
-}
-
-function loadLogoutIntent() {
+function setRestoreBlock(value) {
+  restoreBlock = value;
   try {
-    const raw = sessionStorage.getItem(LOGOUT_PENDING_KEY);
-
-    if (!raw) {
-      return null;
-    }
-
-    const intent = JSON.parse(raw);
-
-    if (
-      intent.memberId == null ||
-      typeof intent.sessionId !== "string" ||
-      !intent.sessionId ||
-      typeof intent.all !== "boolean"
-    ) {
-      return null;
-    }
-
-    return intent;
+    if (value) sessionStorage.setItem(REAUTH_KEY, value);
+    else sessionStorage.removeItem(REAUTH_KEY);
+    sessionStorage.removeItem(LEGACY_PENDING_KEY);
   } catch {
-    return null;
-  }
-}
-
-function removeLogoutIntent() {
-  sessionStorage.removeItem(LOGOUT_PENDING_KEY);
-}
-
-function notifyAuthChange(type, sessionId = null, memberId = null) {
-  try {
-    authChannel?.postMessage({
-      type,
-      sessionId,
-      memberId,
-      timestamp: Date.now(),
-    });
-  } catch (error) {
-    console.warn("인증 상태 동기화 실패", error);
+    // Storage 실패가 서버 로그아웃 자체를 막으면 안 된다.
   }
 }
 
 export function subscribe(listener) {
   listeners.add(listener);
-
   return () => listeners.delete(listener);
 }
-
 export function getSnapshot() {
   return state;
 }
-
 export function getAccessToken() {
   return accessToken;
 }
-
 export function getGeneration() {
   return generation;
 }
-
 export function isAccessTokenExpiring() {
-  return !accessToken || Date.now() >= expiresAt - REFRESH_BUFFER_MS;
+  // 최종 세션 수명이 짧은 경우에도 매 요청마다 회전하지 않도록
+  // 발급 때 결정한 갱신 시점을 이용한다.
+  return !accessToken || Date.now() >= refreshAt;
 }
-
+let refreshAt = 0;
 export function dismissNotice() {
   publish({ notice: null });
 }
-
 export function getAuthErrorCode(error) {
   return (
-    error.response?.data?.error?.code ?? error.response?.data?.code ?? null
+    error?.response?.data?.error?.code ?? error?.response?.data?.code ?? null
   );
 }
-
-// 인증 무효와 일시적인 서버 장애를 구분한다.
 function isInvalidSession(error) {
-  const status = error.response?.status;
   const code = getAuthErrorCode(error);
-
   return (
-    status === 401 ||
+    error?.response?.status === 401 ||
     [
       "INVALID_REFRESH_TOKEN",
       "INVALID_SESSION",
       "SESSION_REVOKED",
       "SESSION_EXPIRED",
       "SESSION_NOT_ACTIVE",
+      "REFRESH_TOKEN_REUSED",
+      "SESSION_SCOPE_DENIED",
     ].includes(code)
   );
 }
+function assertGeneration(expected) {
+  if (generation !== expected) throw new Error("AUTH_GENERATION_CHANGED");
+}
+function currentIdentity() {
+  return state.sessionId && state.user?.id != null
+    ? { sessionId: state.sessionId, memberId: state.user.id }
+    : null;
+}
+function matchesIdentity(data, identity) {
+  return (
+    !identity ||
+    (data?.sessionId === identity.sessionId &&
+      String(data?.member?.id) === String(identity.memberId))
+  );
+}
 
-function acceptTokens(data, expectedGeneration) {
-  if (generation !== expectedGeneration) {
-    throw new Error("AUTH_GENERATION_CHANGED");
-  }
-
-  const lifetime = Number(data.expiresIn);
-
+function acceptTokens(data, expectedGeneration, expectedIdentity = null) {
+  assertGeneration(expectedGeneration);
+  const lifetime = Number(data?.expiresIn);
   if (
-    !data.accessToken ||
-    !data.member ||
-    data.member.id == null ||
-    !data.sessionId ||
+    !data?.accessToken ||
+    !data?.sessionId ||
+    data?.member?.id == null ||
     !Number.isFinite(lifetime) ||
     lifetime <= 0
   ) {
     throw new Error("INVALID_AUTH_RESPONSE");
   }
-
-  // 기존 회원 및 인증 세션과 일치하는지 확인
-  if (
-    state.sessionId &&
-    (state.sessionId !== data.sessionId ||
-      String(state.user?.id) !== String(data.member.id))
-  ) {
-    clearAuth(
-      "다른 로그인 세션이 감지되었습니다. " + "인증을 다시 확인해 주세요.",
-    );
-
+  if (!matchesIdentity(data, expectedIdentity ?? currentIdentity())) {
+    clearAuth("다른 로그인 세션이 감지되었습니다. 다시 로그인해 주세요.");
     throw new Error("AUTH_SESSION_CHANGED");
   }
-
   accessToken = data.accessToken;
-  expiresAt = Date.now() + lifetime * 1000;
-
+  const lifetimeMs = lifetime * 1000;
+  expiresAt = Date.now() + lifetimeMs;
+  refreshAt = expiresAt - Math.min(REFRESH_BUFFER_MS, lifetimeMs / 5);
   publish({
     user: data.member,
     sessionId: data.sessionId,
     status: logoutPromise ? "signingOut" : "authenticated",
     notice: null,
   });
-
   return data;
 }
 
+// 로컬 인증만 폐기한다. 다른 탭의 공유 Cookie를 삭제하지 않는다.
 export function clearAuth(notice = null) {
   generation += 1;
-
   accessToken = null;
   expiresAt = 0;
-
+  refreshAt = 0;
+  setRestoreBlock(restoreBlock === "logout-pending" ? restoreBlock : "reauth");
   publish({
     user: null,
     sessionId: null,
@@ -211,574 +181,284 @@ export function clearAuth(notice = null) {
   });
 }
 
+// 기존 Context API 이름 유지. 실제 서버 로그아웃 또는 Cookie 삭제가 아니다.
+// 사용자 명시 로그인으로 Cookie를 교체하도록 하여 다른 탭의 Cookie 삭제를 방지한다.
 export function clearBrowserAuth(notice = null) {
-  if (clearCookiePromise) {
-    return clearCookiePromise;
-  }
-
   if (loginPromise || refreshPromise || logoutPromise) {
     return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
   }
-
-  const previousStatus = state.status;
-
-  publish({
-    status: "clearing",
-  });
-
-  clearCookiePromise = withAuthLock(async () => {
-    const previousSessionId = state.sessionId;
-    const previousMemberId = state.user?.id;
-
-    await authHttp.post("/members/clear-cookie");
-
-    notifyAuthChange(
-      AUTH_EVENT.COOKIE_CLEARED,
-      previousSessionId,
-      previousMemberId,
-    );
-
-    clearAuth(notice);
-
-    return true;
-  })
-    .catch(() => {
-      publish({
-        status: previousStatus,
-        notice:
-          "인증 쿠키를 초기화하지 못했습니다. " +
-          "서버 연결 상태를 확인해 주세요.",
-      });
-      return false;
-    })
-    .finally(() => {
-      clearCookiePromise = null;
-    });
-
-  return clearCookiePromise;
+  const uncertain =
+    restoreBlock === "logout-pending" || state.status === "logoutFailed";
+  clearAuth(
+    notice ??
+      (uncertain
+        ? "이전 서버 세션의 종료 여부를 확인하지 못했습니다. 다시 로그인해 주세요."
+        : "다시 로그인해 주세요."),
+  );
+  return Promise.resolve(true);
 }
 
-// 로그인
+function withAuthLock(task) {
+  if (globalThis.navigator?.locks?.request) {
+    return globalThis.navigator.locks.request(
+      AUTH_LOCK,
+      { mode: "exclusive" },
+      task,
+    );
+  }
+  // HTTPS/localhost가 아닌 환경에서는 탭 간 직렬화가 보장되지 않는다.
+  return Promise.resolve().then(task);
+}
+function notifyAuthChange(type, identity) {
+  lastLocalMutation = Date.now();
+  try {
+    authChannel?.postMessage({
+      type,
+      ...identity,
+      timestamp: lastLocalMutation,
+    });
+  } catch {
+    // 수신 누락은 서버의 회원/SID 검증으로 보완한다.
+  }
+}
+
 export function signIn(email, password) {
-  if (clearCookiePromise) {
-    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
-  }
-
-  if (loginPromise) {
-    return loginPromise;
-  }
-
-  if (logoutPromise || refreshPromise || state.status === "restoring") {
+  if (loginPromise) return loginPromise;
+  if (
+    logoutPromise ||
+    refreshPromise ||
+    !["anonymous", "unavailable"].includes(state.status)
+  ) {
     return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
   }
-
-  if (state.status === "authenticated") {
-    return Promise.reject(new Error("ALREADY_AUTHENTICATED"));
-  }
-
-  if (!["anonymous", "unavailable"].includes(state.status)) {
-    return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
-  }
-
-  // 기존 인증 복원 실패 상태가 있다면
-  // 신규 로그인으로 전환한다.
   clearAuth();
-
-  const currentGeneration = generation;
-
-  publish({
-    status: "signingIn",
-    notice: null,
-  });
-
+  const expectedGeneration = generation;
+  publish({ status: "signingIn", notice: null });
   loginPromise = withAuthLock(async () => {
-    if (generation !== currentGeneration) {
-      throw new Error("AUTH_GENERATION_CHANGED");
-    }
-
+    assertGeneration(expectedGeneration);
     const response = await authHttp.post("/members/login", { email, password });
-
-    const data = acceptTokens(response.data.data, currentGeneration);
-
-    notifyAuthChange(AUTH_EVENT.LOGIN, data.sessionId, data.member.id);
-
+    const data = acceptTokens(response.data.data, expectedGeneration);
+    setRestoreBlock(null);
+    notifyAuthChange(AUTH_EVENT.LOGIN, currentIdentity());
     return data;
   })
     .catch((error) => {
-      if (generation === currentGeneration) {
-        clearAuth();
-      }
-
+      if (generation === expectedGeneration) clearAuth();
       throw error;
     })
     .finally(() => {
       loginPromise = null;
     });
-
   return loginPromise;
 }
 
-function withAuthLock(task) {
-  if (navigator.locks?.request) {
-    return navigator.locks.request(
-      "fixops-auth-session",
-      { mode: "exclusive" },
-      task,
-    );
-  }
-
-  return Promise.resolve().then(task);
+// 호출자는 Lock을 이미 획득해야 한다. 기대 SID를 서버에도 보내서
+// 다른 탭의 Cookie를 회전시키기 전에 불일치를 차단한다.
+async function refreshInsideLock(expectedGeneration, identity) {
+  assertGeneration(expectedGeneration);
+  const response = await authHttp.post("/members/refresh", identity ?? {}, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  return acceptTokens(response.data.data, expectedGeneration, identity);
 }
 
-async function refreshInsideLock(expectedGeneration) {
-  if (generation !== expectedGeneration) {
-    throw new Error("AUTH_GENERATION_CHANGED");
-  }
-
-  const response = await authHttp.post("/members/refresh");
-
-  return acceptTokens(response.data.data, expectedGeneration);
-}
-
-export function retryLogout() {
-  return signOut(state.logoutAllRequested);
-}
-
-// 내부 공통 Refresh 구현
 function performRefresh() {
-  if (clearCookiePromise) {
-    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
+  if (refreshPromise) return refreshPromise;
+  if (logoutPromise || loginPromise) {
+    return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
   }
-
-  if (logoutPromise) {
-    return Promise.reject(new Error("LOGOUT_IN_PROGRESS"));
-  }
-
-  if (loginPromise) {
-    return Promise.reject(new Error("LOGIN_IN_PROGRESS"));
-  }
-
-  if (refreshPromise) {
-    return refreshPromise;
-  }
-
-  const currentGeneration = generation;
-
-  refreshPromise = withAuthLock(() => refreshInsideLock(currentGeneration))
+  const expectedGeneration = generation;
+  const identity = currentIdentity();
+  refreshPromise = withAuthLock(() =>
+    refreshInsideLock(expectedGeneration, identity),
+  )
     .catch((error) => {
-      if (generation !== currentGeneration) {
-        throw error;
-      }
-
-      // 진행 중인 로그아웃 상태를 덮어쓰지 않는다.
-      if (logoutPromise) {
-        throw error;
-      }
-
+      if (generation !== expectedGeneration || logoutPromise) throw error;
       const code = getAuthErrorCode(error);
-
       if (code === "REFRESH_COOKIE_MISSING") {
-        clearAuth();
+        // 최초 방문/쿠키 없음에는 만료 안내를 표시하지 않는다.
+        if (identity)
+          clearAuth("로그인 세션이 종료되었습니다. 다시 로그인해 주세요.");
+        else clearAuth();
       } else if (isInvalidSession(error)) {
-        clearAuth(
-          "세션이 만료되었거나 종료되었습니다. " + "다시 로그인해 주세요.",
-        );
+        clearAuth("세션이 만료되었거나 종료되었습니다. 다시 로그인해 주세요.");
       } else {
         publish({
           status: state.user ? "authenticated" : "unavailable",
-
           notice:
-            "인증 서버에 연결하지 못했습니다. " + "잠시 후 다시 시도해 주세요.",
+            "인증 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
         });
       }
-
       throw error;
     })
     .finally(() => {
       refreshPromise = null;
     });
-
   return refreshPromise;
 }
 
 export function refreshAuth() {
-  if (["logoutFailed", "signingOut", "clearing"].includes(state.status)) {
+  if (restoreBlock || !["authenticated", "restoring"].includes(state.status)) {
     return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
   }
-
   return performRefresh();
 }
 
-// 브라우저 새로고침 시 최초 인증 복원
 export function restoreAuth() {
-  const pending = loadLogoutIntent();
-
-  // ===== 신규 추가 =====
-
-  if (pending) {
-    accessToken = null;
-    expiresAt = 0;
-
-    publish({
-      user: null,
-      sessionId: null,
-
-      status: "logoutRecovery",
-      logoutIntent: pending,
-      logoutAllRequested: pending.all,
-
-      notice:
-        "완료되지 않은 로그아웃 요청이 " +
-        "있습니다. 로그아웃 상태를 " +
-        "확인해 주세요.",
-    });
-
-    return Promise.resolve(null);
-  }
-
-  if (clearCookiePromise) {
-    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
-  }
-
-  if (state.status === "authenticated") {
-    return Promise.resolve(state.user);
-  }
-
-  if (refreshPromise) {
-    return refreshPromise;
-  }
-
-  if (loginPromise || logoutPromise) {
+  if (loginPromise || logoutPromise || state.status === "logoutFailed") {
     return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
   }
-
-  if (state.status === "logoutFailed") {
-    return Promise.reject(new Error("LOGOUT_RETRY_REQUIRED"));
+  if (state.status === "authenticated") return Promise.resolve(state.user);
+  if (refreshPromise) return refreshPromise;
+  if (restoreBlock) {
+    clearAuth(
+      restoreBlock === "logout-pending"
+        ? "이전 서버 로그아웃의 완료 여부를 확인하지 못했습니다. 다시 로그인해 주세요."
+        : null,
+    );
+    return Promise.resolve(null);
   }
-
-  publish({
-    status: "restoring",
-    notice: null,
-  });
-
+  publish({ status: "restoring", notice: null });
   return refreshAuth();
 }
 
-// 단일 로그아웃 및 전체 로그아웃
 export function signOut(all = false) {
-  if (clearCookiePromise) {
-    return Promise.reject(new Error("COOKIE_CLEAR_IN_PROGRESS"));
+  if (logoutPromise) return logoutPromise;
+  if (
+    loginPromise ||
+    !["authenticated", "logoutFailed"].includes(state.status)
+  ) {
+    return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
   }
-
-  if (logoutPromise) {
-    return logoutPromise;
-  }
-
-  if (loginPromise) {
-    return Promise.reject(new Error("LOGIN_IN_PROGRESS"));
-  }
-
-  // 로그아웃 요청 당시 인증 세션 보존
-  const logoutIntent = {
-    memberId: state.user?.id,
-    sessionId: state.sessionId,
-    all,
-    requestedAt: Date.now(),
-    generation,
-  };
-
-  if (logoutIntent.memberId == null || !logoutIntent.sessionId) {
-    return Promise.reject(new Error("INVALID_SESSION"));
-  }
-
-  try {
-    saveLogoutIntent({
-      memberId: logoutIntent.memberId,
-      sessionId: logoutIntent.sessionId,
-      all: logoutIntent.all,
-      requestedAt: logoutIntent.requestedAt,
-    });
-  } catch {
-    return Promise.reject(new Error("LOGOUT_STATE_STORAGE_FAILED"));
-  }
-
-  function assertLogoutSession() {
+  const identity = currentIdentity();
+  if (!identity) return Promise.reject(new Error("INVALID_SESSION"));
+  const expectedGeneration = generation;
+  // F5 직후 일반 Refresh를 통한 업무 화면 복원을 막는다.
+  setRestoreBlock("logout-pending");
+  const assertLogoutSession = () => {
+    assertGeneration(expectedGeneration);
     if (
-      generation !== logoutIntent.generation ||
-      String(state.user?.id) !== String(logoutIntent.memberId) ||
-      state.sessionId !== logoutIntent.sessionId
+      !matchesIdentity(
+        { sessionId: state.sessionId, member: state.user },
+        identity,
+      )
     ) {
       throw new Error("AUTH_SESSION_CHANGED");
     }
-  }
-
+  };
   logoutPromise = Promise.resolve()
     .then(async () => {
-      publish({
-        status: "signingOut",
-        logoutAllRequested: all,
-        logoutIntent,
-      });
-
-      // 1. 기존 Refresh 요청이 종료될 때까지 대기
-      // Lock을 획득하기 전에 처리
-      if (refreshPromise) {
-        await refreshPromise;
-      }
-
+      // 이미 시작한 갱신이 끝나기를 Lock 바깥에서 기다린다.
+      if (refreshPromise) await refreshPromise;
       assertLogoutSession();
-
-      // 2. Logout 전용 Lock 획득
       return withAuthLock(async () => {
         assertLogoutSession();
-
-        // 3. 필요할 경우 Lock 내부에서 직접 Refresh
         if (isAccessTokenExpiring()) {
-          await refreshInsideLock(logoutIntent.generation);
-
-          assertLogoutSession();
+          await refreshInsideLock(expectedGeneration, identity);
         }
-
-        // 4. Refresh 이후에도 동일 회원/SID 검증
         assertLogoutSession();
-
-        const headers = {
-          Authorization: `Bearer ${accessToken}`,
-        };
-
-        // 5. 로그아웃 API 호출
-        if (all) {
-          await authHttp.post("/members/logout-all", null, { headers });
-        } else {
-          await authHttp.post("/members/logout", null, { headers });
-        }
-
-        // 6. 동일 세션인 경우 로컬 인증 상태 초기화
-        assertLogoutSession();
-
+        const endpoint = all ? "/members/logout-all" : "/members/logout";
+        // 두 API 모두 서버에서 Bearer의 회원/SID와 Cookie 소유권을 대조한다.
+        await authHttp.post(endpoint, null, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        // 서버 성공은 다른 탭에도 전달한다. 로컬 상태가 바뀌었으면 덮어쓰지 않는다.
         notifyAuthChange(
           all ? AUTH_EVENT.LOGOUT_ALL : AUTH_EVENT.LOGOUT,
-
-          logoutIntent.sessionId,
-          logoutIntent.memberId,
+          identity,
         );
-
-        clearAuth();
-
+        if (generation === expectedGeneration) {
+          setRestoreBlock("reauth");
+          clearAuth();
+        }
         return true;
       });
     })
     .catch((error) => {
+      if (generation !== expectedGeneration) return false;
       if (
-        error.message === "AUTH_SESSION_CHANGED" ||
-        error.message === "AUTH_GENERATION_CHANGED" ||
-        generation !== logoutIntent.generation
+        isInvalidSession(error) ||
+        ["AUTH_SESSION_CHANGED", "AUTH_GENERATION_CHANGED"].includes(
+          error.message,
+        )
       ) {
-        if (generation === logoutIntent.generation) {
-          clearAuth(
-            "로그인 세션이 변경되었습니다. " + "인증을 다시 확인해 주세요.",
-          );
-        }
-
+        clearAuth(
+          "이전 세션의 종료 여부를 확인할 수 없습니다. 다른 세션은 종료하지 않습니다. 다시 로그인해 주세요.",
+        );
         return false;
       }
-
       publish({
         status: "logoutFailed",
         logoutAllRequested: all,
-        notice: "서버 로그아웃에 실패했습니다. " + "다시 시도해 주세요.",
+        notice: "서버 로그아웃에 실패했습니다. 다시 시도해 주세요.",
       });
-
       return false;
     })
     .finally(() => {
       logoutPromise = null;
     });
-
+  // 업무 요청을 즉시 차단한다. 이미 처리된 서버 요청은 취소하지 않는다.
+  publish({ status: "signingOut", logoutAllRequested: all });
   return logoutPromise;
 }
 
-export function recoverLogout() {
-  if (logoutPromise) {
-    return logoutPromise;
+export function retryLogout() {
+  if (state.status !== "logoutFailed" || !currentIdentity()) {
+    return Promise.reject(new Error("LOGOUT_RETRY_REQUIRED"));
   }
-
-  if (loginPromise || refreshPromise || clearCookiePromise) {
-    return Promise.reject(new Error("AUTH_REQUEST_IN_PROGRESS"));
-  }
-
-  const pending = loadLogoutIntent();
-
-  if (!pending) {
-    return Promise.reject(new Error("LOGOUT_INTENT_NOT_FOUND"));
-  }
-
-  const currentGeneration = generation;
-
-  logoutPromise = Promise.resolve()
-    .then(() => {
-      publish({
-        status: "signingOut",
-        logoutIntent: pending,
-        logoutAllRequested: pending.all,
-      });
-
-      return withAuthLock(async () => {
-        if (generation !== currentGeneration) {
-          throw new Error("AUTH_GENERATION_CHANGED");
-        }
-
-        // 복구용 Refresh
-        const response = await authHttp.post("/members/refresh");
-
-        const data = response.data.data;
-
-        if (generation !== currentGeneration) {
-          throw new Error("AUTH_GENERATION_CHANGED");
-        }
-
-        // 최초 로그아웃 대상과 일치하는지 확인
-        if (
-          !data.sessionId ||
-          data.sessionId !== pending.sessionId ||
-          String(data.member?.id) !== String(pending.memberId)
-        ) {
-          throw new Error("AUTH_SESSION_CHANGED");
-        }
-
-        if (!data.accessToken) {
-          throw new Error("INVALID_AUTH_RESPONSE");
-        }
-
-        // 업무 화면에 인증 상태를 공개하지 않고
-        // 로그아웃 요청에서만 토큰 사용
-        const headers = {
-          Authorization: `Bearer ${data.accessToken}`,
-        };
-
-        const endpoint = pending.all
-          ? "/members/logout-all"
-          : "/members/logout";
-
-        await authHttp.post(endpoint, null, { headers });
-
-        removeLogoutIntent();
-
-        notifyAuthChange(
-          pending.all ? AUTH_EVENT.LOGOUT_ALL : AUTH_EVENT.LOGOUT,
-          pending.sessionId,
-          pending.memberId,
-        );
-
-        if (generation === currentGeneration) {
-          clearAuth();
-        }
-
-        return true;
-      });
-    })
-    .catch((error) => {
-      if (generation !== currentGeneration) {
-        return false;
-      }
-
-      const code = getAuthErrorCode(error);
-
-      if (
-        error.message === "AUTH_SESSION_CHANGED" ||
-        error.message === "AUTH_GENERATION_CHANGED" ||
-        code === "REFRESH_COOKIE_MISSING" ||
-        isInvalidSession(error)
-      ) {
-        accessToken = null;
-        expiresAt = 0;
-
-        publish({
-          user: null,
-          sessionId: null,
-          status: "logoutUncertain",
-          logoutIntent: pending,
-
-          notice:
-            "기존 세션의 종료 여부를 확인할 수 " +
-            "없습니다. 다른 세션은 종료하지 않습니다.",
-        });
-
-        return false;
-      }
-
-      publish({
-        status: "logoutRecovery",
-        logoutIntent: pending,
-
-        notice:
-          "로그아웃을 완료하지 못했습니다. " +
-          "서버 연결 상태를 확인해 주세요.",
-      });
-
-      return false;
-    })
-    .finally(() => {
-      logoutPromise = null;
-    });
-
-  return logoutPromise;
+  return signOut(state.logoutAllRequested);
 }
 
 function handleAuthMessage(event) {
-  const { type, sessionId, memberId } = event.data ?? {};
-
-  switch (type) {
-    case AUTH_EVENT.LOGIN: {
-      // 현재 탭에서 인증 요청을 진행 중인 경우도 무효화
-      if (
-        (state.sessionId && state.sessionId !== sessionId) ||
-        state.status === "restoring" ||
-        state.status === "signingIn"
-      ) {
-        clearAuth("다른 탭에서 새로운 로그인이 " + "감지되었습니다.");
-      }
-
-      break;
+  const { type, sessionId, memberId, timestamp } = event.data ?? {};
+  if (!Number.isFinite(timestamp) || timestamp < lastLocalMutation) return;
+  const restoring = state.status === "restoring";
+  const matchingSid = Boolean(sessionId && state.sessionId === sessionId);
+  const matchingMember =
+    memberId != null &&
+    state.user?.id != null &&
+    String(state.user.id) === String(memberId);
+  if (
+    type === AUTH_EVENT.LOGIN &&
+    ((state.sessionId && !matchingSid) ||
+      restoring ||
+      state.status === "signingIn")
+  ) {
+    clearAuth(
+      "다른 탭에서 새로운 로그인이 감지되었습니다. 다시 로그인해 주세요.",
+    );
+  } else if (
+    (type === AUTH_EVENT.LOGOUT && (matchingSid || restoring)) ||
+    (type === AUTH_EVENT.LOGOUT_ALL && (matchingMember || restoring))
+  ) {
+    // 단일 로그아웃 이벤트가 전체 로그아웃 성공을 증명하는 것은 아니다.
+    if (
+      restoreBlock !== "logout-pending" ||
+      (matchingSid && !state.logoutAllRequested) ||
+      (type === AUTH_EVENT.LOGOUT_ALL && matchingMember)
+    ) {
+      setRestoreBlock("reauth");
     }
-
-    case AUTH_EVENT.LOGOUT: {
-      if (sessionId && state.sessionId === sessionId) {
-        clearAuth("다른 탭에서 로그아웃되었습니다.");
-      }
-
-      break;
-    }
-
-    case AUTH_EVENT.LOGOUT_ALL: {
-      if (
-        memberId != null &&
-        state.user?.id != null &&
-        String(state.user.id) === String(memberId)
-      ) {
-        clearAuth("전체 기기에서 로그아웃되었습니다.");
-      }
-
-      break;
-    }
-
-    case AUTH_EVENT.COOKIE_CLEARED: {
-      if (!sessionId || state.sessionId === sessionId) {
-        clearAuth("다른 탭에서 인증 쿠키가 " + "초기화되었습니다.");
-      }
-
-      break;
-    }
-
-    default:
-      break;
+    clearAuth(
+      type === AUTH_EVENT.LOGOUT_ALL
+        ? "전체 기기에서 로그아웃되었습니다."
+        : "다른 탭에서 로그아웃되었습니다.",
+    );
+  } else if (
+    type === AUTH_EVENT.COOKIE_CLEARED &&
+    (!sessionId || matchingSid || restoring)
+  ) {
+    clearAuth("다른 탭에서 인증 쿠키가 초기화되었습니다.");
   }
-  authChannel?.addEventListener("message", handleAuthMessage);
-  if (import.meta.hot) {
-    import.meta.hot.dispose(() => {
-      authChannel?.removeEventListener("message", handleAuthMessage);
+}
 
-      authChannel?.close();
-    });
-  }
+// 반드시 수신 함수 바깥에서 최초 1회 등록한다.
+authChannel?.addEventListener("message", handleAuthMessage);
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    authChannel?.removeEventListener("message", handleAuthMessage);
+    authChannel?.close();
+  });
 }

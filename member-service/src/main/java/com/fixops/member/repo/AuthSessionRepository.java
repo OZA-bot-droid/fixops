@@ -17,6 +17,6 @@ public interface AuthSessionRepository extends JpaRepository<AuthSession, UUID> 
     Optional<AuthSession> lockById(@Param("id") UUID id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select s from AuthSession s where s.memberId = :memberId and s.revoked = false")
+    @Query("select s from AuthSession s where s.memberId = :memberId and s.revoked = false order by s.id")
     List<AuthSession> lockActiveByMemberId(@Param("memberId") Long memberId);
 }

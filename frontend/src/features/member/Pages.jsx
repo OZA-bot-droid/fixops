@@ -1,7 +1,11 @@
+import { canApplyOrganization, onboardingIntent, onboardingQuery, onboardingDestination } from "./onboardingPolicy";
+import { PlatformOnboardingInvitations } from "./OnboardingInvitations";
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import * as api from "./memberApi";
+import MyOrganizationsCard from "./MyOrganizationsCard";
+import { explainError as explain } from "../../api/errors";
 import {
   Alert,
   Button,
@@ -12,12 +16,6 @@ import {
   StatusBadge,
 } from "../../components/ui";
 import { PageHeader } from "../../components/layout/AppLayout";
-const explain = (e) =>
-  e.response?.data?.error?.message ||
-  e.response?.data?.error?.code ||
-  e.response?.data?.message ||
-  e.message ||
-  "요청에 실패했습니다.";
 const titleCell = "px-5 py-4 text-left text-xs font-semibold text-fixops-muted";
 const bodyCell = "px-5 py-4 text-[13px]";
 function AuthShell({ title, description, children }) {
@@ -60,7 +58,8 @@ function AuthShell({ title, description, children }) {
   );
 }
 export function LoginPage() {
-  const { signIn, loggedIn, loading, signingIn } = useAuth();
+  const { signIn, loggedIn, loading, signingIn, user } = useAuth();
+  const intent = onboardingIntent(useLocation().search);
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
@@ -80,7 +79,7 @@ export function LoginPage() {
   }
 
   if (loggedIn) {
-    return <Navigate to="/member" replace />;
+    return <Navigate to={onboardingDestination(user, intent)} replace />;
   }
   return (
     <AuthShell title="로그인">
@@ -134,7 +133,7 @@ export function LoginPage() {
           </Button>
           <p className="text-center text-[13px]">
             계정이 없으신가요?{" "}
-            <Link to="/signup" className="font-semibold text-fixops-primary">
+            <Link to={"/signup" + onboardingQuery(intent)} className="font-semibold text-fixops-primary">
               회원가입
             </Link>
           </p>
@@ -150,6 +149,8 @@ export function LoginPage() {
   );
 }
 export function SignupPage() {
+  const initialIntent = onboardingIntent(useLocation().search);
+  const [intent, setIntent] = useState(initialIntent);
   const [email, setEmail] = useState(""),
     [name, setName] = useState(""),
     [password, setPassword] = useState(""),
@@ -157,7 +158,7 @@ export function SignupPage() {
     [error, setError] = useState(""),
     [pending, setPending] = useState(false);
   return (
-    <AuthShell title="회원가입·이메일 인증">
+    <AuthShell title="회원가입">
       <form
         className="grid gap-5"
         onSubmit={async (e) => {
@@ -170,7 +171,7 @@ export function SignupPage() {
             setMsg(
               v.emailVerified
                 ? "계정이 생성되었습니다. 로그인할 수 있습니다."
-                : "계정이 생성되었습니다. 이메일 인증 기능은 추후 연동됩니다.",
+                : "계정이 생성되었습니다. 로그인 후 이메일 인증을 완료해 주세요.",
             );
           } catch (err) {
             setError(explain(err));
@@ -179,6 +180,14 @@ export function SignupPage() {
           }
         }}
       >
+        <Field label="서비스 이용 목적" as="select" value={intent} onChange={e=>setIntent(e.target.value)}>
+          <option value="">나중에 선택</option>
+          <option value="resident">입주민으로 이용</option>
+          <option value="member">기술자·조직 구성원으로 이용</option>
+          <option value="organization">조직에 FixOps 도입</option>
+          <option value="invitation">플랫폼 조직 개설 초대를 받음</option>
+        </Field>
+        <p className="text-xs text-fixops-muted">이용 목적 선택은 화면 이동에만 사용되며 권한을 부여하지 않습니다.</p>
         <Field
           label="이메일 주소"
           type="email"
@@ -208,7 +217,7 @@ export function SignupPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
         <p className="text-xs text-fixops-muted">
-          Figma 인증번호 입력 UI는 이메일 발송·검증 API 준비 후 활성화합니다.
+          계정 생성 후 로그인하여 이메일 인증을 완료해 주세요.
         </p>
         {error && <Alert tone="error">{error}</Alert>}
         {msg && <Alert tone="success">{msg}</Alert>}
@@ -217,7 +226,7 @@ export function SignupPage() {
         </Button>
         <p className="text-center text-xs">
           이미 계정이 있으신가요?{" "}
-          <Link to="/login" className="font-semibold text-fixops-primary">
+          <Link to={"/login" + onboardingQuery(intent)} className="font-semibold text-fixops-primary">
             로그인
           </Link>
         </p>
@@ -252,6 +261,9 @@ export function MemberHome() {
         title="대시보드"
         description="조직 운영과 내 계정 상태를 한눈에 확인하세요."
       />
+      {user?.emailVerified !== true && !user?.platformAdmin && (
+        <div className="mb-5"><Alert>이메일 인증이 필요합니다. <Link to="/email-verification" className="font-semibold underline">이메일 인증하기</Link></Alert></div>
+      )}
       <div className="grid gap-5 lg:grid-cols-3">
         {[
           { name: "내 조직 수", value: user?.memberships?.length || 0 },
@@ -268,8 +280,8 @@ export function MemberHome() {
         ))}
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <Card className="p-7">
-          <h2 className="text-lg font-semibold">조직 관리</h2>
+        {canApplyOrganization(user) && <Card className="p-7">
+          <h2 className="text-lg font-semibold">서비스 도입</h2>
           <p className="mt-3 text-sm text-fixops-muted">
             조직 개설 신청과 내 신청 상태를 관리할 수 있습니다.
           </p>
@@ -277,9 +289,9 @@ export function MemberHome() {
             to="/organizations/apply"
             className="mt-5 inline-block text-sm font-semibold text-fixops-primary"
           >
-            조직 개설 신청 →
+            서비스 도입 신청 →
           </Link>
-        </Card>
+        </Card>}
         <Card className="p-7">
           <h2 className="text-lg font-semibold">계정 설정</h2>
           <p className="mt-3 text-sm text-fixops-muted">
@@ -297,6 +309,8 @@ export function MemberHome() {
   );
 }
 export function OrganizationApply() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [name, setName] = useState(""),
     [kind, setKind] = useState("BUILDING"),
     [msg, setMsg] = useState(""),
@@ -314,11 +328,11 @@ export function OrganizationApply() {
   return (
     <>
       <PageHeader
-        title="조직 생성·산업 선택"
+        title="서비스 도입 신청"
         description="조직 규정과 작업 흐름에 따라 정확히 등록해 주세요."
       />
       <div className="grid items-start gap-7 xl:grid-cols-[minmax(0,735px)_minmax(270px,335px)]">
-        <Card className="p-7">
+        {canApplyOrganization(user) ? <Card className="p-7">
           <h2 className="text-[19px] font-bold">기본 정보</h2>
           <form
             className="mt-8 grid gap-7"
@@ -328,7 +342,11 @@ export function OrganizationApply() {
               setMsg("");
               setPending(true);
               try {
-                await api.applyOrg({ name, kind });
+                const created = await api.applyOrg({ name: name.trim(), kind });
+                if (kind === "BUILDING" && created?.id != null) {
+                  navigate(`/complexes/register?organizationId=${encodeURIComponent(created.id)}`);
+                  return;
+                }
                 setMsg(
                   "조직 개설 신청이 접수되었습니다. 플랫폼 관리자 승인 후 이용할 수 있습니다.",
                 );
@@ -370,7 +388,7 @@ export function OrganizationApply() {
               </Button>
             </div>
           </form>
-        </Card>
+        </Card> : <Card className="p-6"><Alert>현재 계정은 일반 조직 개설을 신청할 수 없습니다. 플랫폼 관리자의 초대를 이용해 주세요.</Alert></Card>}
         <Card className="p-6">
           <h2 className="text-lg font-bold">입력 가이드</h2>
           <p className="mt-4 text-sm leading-6 text-fixops-muted">
@@ -400,6 +418,7 @@ export function OrganizationApply() {
                   <td className={bodyCell}>{x.kind}</td>
                   <td className={bodyCell}>
                     <StatusBadge status={x.status} />
+                    {x.kind === "BUILDING" && x.status === "PENDING_APPROVAL" && <Link className="ml-3 text-fixops-primary underline" to={`/complexes/register?organizationId=${encodeURIComponent(x.id)}`}>단지 등록</Link>}
                   </td>
                 </tr>
               ))}
@@ -449,14 +468,16 @@ export function PlatformOrganizations() {
   return (
     <>
       <PageHeader
-        title="조직 승인 관리"
+        title="조직 개설 관리"
         description="플랫폼 관리자가 접수된 조직의 개설 신청을 검토하고 결정합니다."
+        action={<Link to="/platform/complex-managements" className="font-semibold text-fixops-primary underline">단지 관리권 심사</Link>}
       />
       {error && (
         <div className="mb-5">
           <Alert tone="error">{error}</Alert>
         </div>
       )}
+      <PlatformOnboardingInvitations />
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-fixops-border p-6">
           <h2 className="font-semibold">승인 대기 조직</h2>
@@ -488,7 +509,7 @@ export function PlatformOrganizations() {
                     <div className="flex gap-2">
                       <Button
                         onClick={() =>
-                          setSelected({ id: x.id, name: x.name, approve: true })
+                          setSelected({ id: x.id, name: x.name, kind: x.kind, approve: true })
                         }
                       >
                         승인
@@ -520,10 +541,10 @@ export function PlatformOrganizations() {
         open={!!selected}
         title={selected?.approve ? "조직 개설 승인" : "조직 개설 반려"}
         description={`${selected?.name || ""} 조직에 대한 결정을 확인하세요.`}
-        onClose={() => setSelected(null)}
+        onClose={() => { if (!busy) setSelected(null); }}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setSelected(null)}>
+            <Button variant="secondary" disabled={busy} onClick={() => setSelected(null)}>
               취소
             </Button>
             <Button
@@ -542,8 +563,8 @@ export function PlatformOrganizations() {
       >
         {selected?.approve ? (
           <Alert>
-            조직 승인 시 신청자에게 첫 ADMIN 역할이 부여됩니다. 관리권 증빙을
-            반드시 검토하세요.
+            조직 승인 시 신청자에게 첫 ADMIN 역할이 부여됩니다.
+            {selected.kind === "BUILDING" && <> 공동주택 조직은 단지 관리권 심사를 먼저 완료해야 합니다. <Link to="/platform/complex-managements" className="underline">단지 심사로 이동</Link></>}
           </Alert>
         ) : (
           <Field
@@ -604,6 +625,8 @@ export function ProfilePage() {
                 readOnly
               />
 
+              <Field label="이메일 인증" value={user?.emailVerified === true ? "인증 완료" : "미인증"} disabled readOnly />
+              {user?.emailVerified !== true && <Link to="/email-verification" className="text-sm font-semibold text-fixops-primary">이메일 인증하기 →</Link>}
               <Field
                 label="플랫폼 관리자"
                 value={user?.platformAdmin ? "예" : "아니오"}
@@ -620,6 +643,7 @@ export function ProfilePage() {
             </div>
           </Card>
 
+          <MyOrganizationsCard />
           <Card className="p-7">
             <h2
               className="

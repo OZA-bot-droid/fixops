@@ -35,7 +35,7 @@ export const me = async () => unwrap(await api.get("/members/me"));
 export const applyOrg = async (data) =>
   unwrap(await api.post("/organizations", data));
 
-export const myOrgs = async () => unwrap(await api.get("/organizations/mine"));
+export const myOrgs = async (signal) => unwrap(await api.get("/organizations/mine", { signal }));
 
 // ======================================================
 // Platform Admin
@@ -51,3 +51,14 @@ export const decideOrg = async (id, approve, reason) =>
       reason,
     }),
   );
+
+export const requestEmailVerification = async () =>
+  unwrap(await api.post("/members/email-verification/request"));
+export const verifyEmail = async (challengeId, code) =>
+  unwrap(await api.post("/members/email-verification/verify", { challengeId, code }));
+
+export const myOnboardingInvitations = async () => unwrap(await api.get("/organizations/onboarding-invitations/mine"));
+export const acceptOnboardingInvitation = async id => unwrap(await api.post(`/organizations/onboarding-invitations/${id}/accept`));
+export const listOnboardingInvitations = async (page=0) => unwrap(await api.get("/platform/organizations/onboarding-invitations", {params:{page,size:20}}));
+export const issueOnboardingInvitation = async data => unwrap(await api.post("/platform/organizations/onboarding-invitations",data));
+export const revokeOnboardingInvitation = async id => unwrap(await api.patch(`/platform/organizations/onboarding-invitations/${id}/revoke`));

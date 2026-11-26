@@ -8,20 +8,36 @@
 
 | 사용자 | 화면/모달 | 주 담당 |
 |---|---|---|
-| 공통 | 로그인, 회원가입, 계정 복원, 조직 검색·가입·승인 대기 | 오좌언 |
+| 공통 | 로그인, 회원가입, 이메일 인증, 계정 복원, 조직 검색·가입·승인 대기 | 오좌언 |
 | PLATFORM_ADMIN | 조직 승인 목록·상세·승인/거절, 단지 중복 검토 | 오좌언 |
 | ADMIN | 조직/단지 목록, 구성원 초대·승인·역할 변경 | 오좌언 |
 | ADMIN | XLSX 명부 업로드·미리보기·오류·확정 | 이도형 UI / 오좌언 API |
+| ADMIN | 주민 등록 코드 발급·재발급·회수, 주민 등록 심사 | 오좌언 |
 | ADMIN | Location·Asset CRUD, 설비 정보 Modal | 이도형 |
 | ADMIN | 신고 접수·배정·상태·예약·방문 관리 | 박천보 |
 | ADMIN | 부품·입고·재고·이력 | 이도관 |
 | TECHNICIAN | 내 작업·일정·사용 부품 입력 | 박천보·이도관 |
-| USER | 단지·세대 연결, 신고 생성·이력, 예약 후보·확정 | 오좌언·박천보 |
+| USER | 단지·세대 연결(등록 코드 기본, SMS 선택), 신청 내역, 신고 생성·이력, 예약 후보·확정 | 오좌언·박천보 |
 | 권한별 | AI 상담/매뉴얼 출처, 허용 Tool 결과 | 하진철 |
 
 - 공유 UI: Button, Input, Modal, ConfirmDialog, Table, Pagination, StatusBadge, Header, Sidebar, AppLayout.
 - 전역 Tailwind CSS 4 `@theme`, SCSS·CSS Modules 미사용. 모달은 키보드·접근성·반응형 고려.
 - React Router UI 가드는 서버 JWT/RBAC/Complex ACL을 대체하지 않는다.
+
+### 1.1 주민 등록 화면 상세 계약 (2026-11-25 개정)
+
+| 화면 | 구현 파일 / 경로 | 주요 동작 |
+|---|---|---|
+| 관리자 코드 관리 | ResidentRegistrationCodePage.jsx / /residents/registration-codes | 해당 단지 ADMIN만 접근; 활성 명부 조회, 미연결·심사 대기 상태 표시, 발급/재발급/회수, 원문 일회 표시 |
+| 관리자 명부 관리 | RosterManagementPage.jsx | 등록 코드 관리 화면 연결 |
+| 관리자 주민 심사 | ResidentReviewPage.jsx | 신청 인증 방식 및 상태 확인, 승인/반려 |
+| 주민 세대 연결 | ResidentEnrollmentPage.jsx | 단지 검색, 32자리 코드 입력, 선택적 SMS OTP, 신청 내역 |
+
+- 인증 방식 조회 API의 smsEnabled가 true일 때만 SMS 선택을 제공한다. 비활성화/조회 실패 시 등록 코드 기본 화면 유지.
+- 이미 연결되었거나 심사 대기인 명부 항목의 신규 코드 발급을 제한한다. UI 제한은 서버 검증을 대체하지 않는다.
+- 주민 등록 승인으로 세대 권한이 변경되면 기존 인증 세션을 회수하고 재로그인한다. 심사 대기 시 신청 내역에서 확인한다.
+- 원문 등록 코드·OTP를 브라우저 영구 저장소나 로그에 남기지 않는다. 관리자의 본인 확인 및 안전한 전달 절차는 03 정책 참조.
+- 구현 반영과 실제 브라우저/동시성 검증 완료를 구분한다. 테스트 기준은 07의 T21~T29 참조.
 
 ## 2. 5인 업무분장 확정
 
@@ -48,13 +64,13 @@
 | D7 | 기능 구현 | 승인/초대 | 설비 CRUD | 배정/상태 | 입고 | 인덱싱 |
 | D8 | 기능 구현 | XLSX parsing/Staging | 명부 화면/단지 | 예약 가용성 | 차감 트랜잭션 | RAG 질의 |
 | D9 | 기능 연결 | 명부 Commit/가입 | Asset MCP | 예약 확정/Tool | Inventory MCP | Tool Registry |
-| D10 | **개별 검증** | Member/OTP Mock | Asset CRUD·맵핑 | 예약/gRPC DB | 원장 동시성 | RAG/MCP 독립 테스트 |
+| D10 | **개별 검증** | Member 이메일·등록 코드/선택적 SMS 검증 | Asset CRUD·맵핑 | 예약/gRPC DB | 원장 동시성 | RAG/MCP 독립 테스트 |
 | D11 | 통합 | 역할/세대 ACL | 위치·단지 검증 | AI 후보 연동 | 재고 업무 연동 | 위임 JWT 연결 |
-| D12 | 통합 | 명부 자동 승인 | 동·호수 UX | 예약 UI | 작업별 차감 | LangChain 종합 응답 |
+| D12 | 통합 | 등록 코드·명부 자동 승인 | 동·호수 UX | 예약 UI | 작업별 차감 | LangChain 종합 응답 |
 | D13 | E2E | 조직별 ACL | Asset 접근 | 예약 충돌 | 재고 멱등 | OTel Trace |
 | D14 | 안정화 | FACTORY/BUILDING 정책 | 공장 Asset | 상태 예외 | 보상 원장 | RAG 문서 격리 |
 | D15 | **P0 동결** | 인가 승인 | Asset 완료 | WorkOrder 완료 | Inventory 완료 | AI 통합 완료 |
-| D16 | 회귀 | OTP·명부 악용 | 단지 격리 | 예약 경합 | 차감 경합 | Tool 권한 |
+| D16 | 회귀 | 등록 코드·OTP·명부 악용 | 단지 격리 | 예약 경합 | 차감 경합 | Tool 권한 |
 | D17 | 장애 | JWT 정지·회수 | API 오류 | gRPC fallback | 서비스 장애 | LLM 오류 |
 | D18 | 배포 검수 | Compose/HTTPS 준비 | 반응형 | 예약 UI | 재고 UI | Jaeger·RAG |
 | D19 | 문서/발표 | AWS/계약 | ERD | Proto/업무 | 정합성 | AI 시연 |
@@ -73,7 +89,7 @@
 ## 5. 발표 시나리오
 
 1. 가상 BUILDING 조직 등록/PLATFORM_ADMIN 승인 및 K-apt 단지 선택.
-2. XLSX 2,000행 시연 명부 업로드·검증·확정 → 인증된 테스트 주민 자동 가입.
+2. XLSX 2,000행 시연 명부 업로드·검증·확정 → 관리자의 테스트 주민 본인 확인·등록 코드 발급 → 주민 코드 인증 및 자동 연결(조건 미충족 시 심사).
 3. USER 고장 신고 → ADMIN 배정 → TECHNICIAN 방문/상태 처리.
 4. AI RAG + MCP → WorkOrder gRPC 가용 슬롯 → USER UI 승인 → WorkOrder REST 예약.
 5. 작업자 부품 사용 → Inventory 재고 차감 → WorkOrder 완료.
@@ -86,6 +102,7 @@
 - [ ] D5 빌드 + Proto/MCP SDK 기술 검증 통과.
 - [ ] K-apt Mock/실제 조회와 수동 심사 후퇴 경로 검증.
 - [ ] 2,000행 XLSX 중복·동시 Commit·자동 승인 공격 테스트 통과.
+- [ ] SMTP 실제 수신, 코드 발급/회수/재사용 제한, SMS 조건부 화면, 중복 신청 및 퇴거 회귀 테스트(T21~T29) 통과.
 - [ ] 조직/단지/세대/작업 ACL 및 JWT 권한 회수 테스트 통과.
 - [ ] 예약·재고 동시성·멱등성·정정 이력 테스트 통과.
 - [ ] RAG 문서 격리·AI Tool 실패·gRPC fallback 테스트 통과.

@@ -85,10 +85,15 @@ def env_for(service,integrate=False):
         env[name.upper()+'_SERVICE_URL']=f'http://127.0.0.1:{dict(member=8081,asset=8082,workorder=8083,inventory=8084,ai=8085)[name]}'
     env['WORKORDER_GRPC_TARGET']='127.0.0.1:9093'
     env['MCP_SERVER_URL']='http://127.0.0.1:8090/mcp'
-    for k in ('DEMO_BUILDING_APPROVAL_BYPASS','DEMO_EMAIL_VERIFICATION_BYPASS','PLATFORM_ADMIN_EMAIL','PLATFORM_ADMIN_PASSWORD'):
-        env[k]=vals.get(k,'false' if k.startswith('DEMO_') else '')
-    env.setdefault('DEMO_BUILDING_APPROVAL_BYPASS','false')
-    env.setdefault('DEMO_EMAIL_VERIFICATION_BYPASS','false')
+    member_keys=('PLATFORM_ADMIN_EMAIL','PLATFORM_ADMIN_PASSWORD','ROSTER_ENCRYPTION_KEY','ROSTER_LOOKUP_KEY','VERIFICATION_PROVIDER','VERIFICATION_EMAIL_PROVIDER','VERIFICATION_SMS_PROVIDER','MAIL_HOST','MAIL_PORT','MAIL_USERNAME','MAIL_PASSWORD','MAIL_FROM','FIXOPS_PUBLIC_URL','VERIFICATION_HASH_KEY','VERIFICATION_ENDPOINT','VERIFICATION_SECRET','VERIFICATION_DEMO_EMAILS','VERIFICATION_DEMO_PHONES','KAPT_SERVICE_KEY','MEMBER_UNIT_INTERNAL_KEY','ASSET_AUTHZ_KEY','WORKORDER_AUTHZ_KEY','INVENTORY_AUTHZ_KEY','AI_AUTHZ_KEY')
+    if service == 'member':
+        for k in member_keys: env[k]=vals.get(k,'')
+        env['VERIFICATION_PROVIDER']=vals.get('VERIFICATION_PROVIDER','disabled')
+        env['SPRING_PROFILES_ACTIVE']=vals.get('MEMBER_SPRING_PROFILES_ACTIVE','local')
+    elif service in ('asset','workorder','inventory','ai'):
+        k=service.upper()+'_AUTHZ_KEY'
+        env[k]=vals.get(k,'')
+        if service=='asset':env['MEMBER_UNIT_INTERNAL_KEY']=vals.get('MEMBER_UNIT_INTERNAL_KEY','')
     return env
 
 def run(command,env=None,cwd=None):
