@@ -1,6 +1,6 @@
 package com.fixops.asset.location.controller;
 
-import com.fixops.asset.common.security.LocationAuthorization;
+import com.fixops.asset.common.security.AssetAuthorization;
 import com.fixops.asset.location.service.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
@@ -12,9 +12,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/locations/building-register")
 public class BuildingRegisterController {
-    private final LocationAuthorization auth;
+    private final AssetAuthorization auth;
     private final BuildingUnitImportService service;
-    public BuildingRegisterController(LocationAuthorization auth,BuildingUnitImportService service){this.auth=auth;this.service=service;}
+    public BuildingRegisterController(AssetAuthorization auth,BuildingUnitImportService service){this.auth=auth;this.service=service;}
     public record PreviewRequest(@NotNull @Positive Long organizationId,@NotNull @Positive Long complexId,
                                  @NotNull BuildingRegisterClient.Parcel parcel){}
     public record CommitRequest(@NotNull @Positive Long organizationId,@NotNull @Positive Long complexId,

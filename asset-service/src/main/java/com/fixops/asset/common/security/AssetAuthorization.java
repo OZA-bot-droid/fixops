@@ -14,10 +14,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 /** Gateway가 인증 후 전달한 사용자 ID·역할·조직 범위로 Asset 도메인 접근 권한을 확인한다. */
 @Component
-public class LocationAuthorization {
+public class AssetAuthorization {
     private final RestClient client;
     private final String key;
-    public LocationAuthorization(@Value("${fixops.member.url:http://127.0.0.1:8081}") String url,
+    public AssetAuthorization(@Value("${fixops.member.url:http://127.0.0.1:8081}") String url,
                                  @Value("${fixops.internal.asset-authz-key:}") String key) {
         this.key=key;
         var factory=new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build());
