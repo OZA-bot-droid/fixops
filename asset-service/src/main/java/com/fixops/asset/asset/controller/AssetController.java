@@ -42,35 +42,29 @@ public class AssetController {
 
     @GetMapping
     public List<AssetResponse> list(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @RequestParam @Positive Long organizationId,
             @RequestParam(required = false) @Positive Long complexId) {
-        authorization.requireRead(memberId, role, memberOrganizationId, organizationId);
+        authorization.requireRead(bearer, organizationId, complexId);
         return assets.list(organizationId, complexId);
     }
 
     /** 로그인한 조직의 산업 유형별 설비 카테고리만 조회한다. */
     @GetMapping("/categories")
     public List<AssetCategoryResponse> categories(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @RequestParam @Positive Long organizationId,
             @RequestParam IndustryType industryType) {
-        authorization.requireRead(memberId, role, memberOrganizationId, organizationId);
+        authorization.requireRead(bearer, organizationId, null);
         return assets.categories(organizationId, industryType);
     }
 
     /** 조직 관리자가 해당 조직에 새 설비 카테고리를 등록한다. */
     @PostMapping("/categories")
     public ResponseEntity<AssetCategoryResponse> createCategory(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @Valid @RequestBody AssetCategoryCreateRequest request) {
-        authorization.requireWrite(memberId, role, memberOrganizationId, request.organizationId());
+        authorization.requireWrite(bearer, request.organizationId(), null);
         AssetCategoryResponse created = assets.createCategory(request);
         return ResponseEntity.created(URI.create("/api/assets/categories/" + created.id())).body(created);
     }
@@ -78,13 +72,11 @@ public class AssetController {
     /** 카테고리의 산업 유형은 유지하고 이름만 수정한다. */
     @PatchMapping("/categories/{id}")
     public AssetCategoryResponse updateCategory(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @PathVariable @Positive Long id,
             @RequestParam @Positive Long organizationId,
             @Valid @RequestBody AssetCategoryUpdateRequest request) {
-        authorization.requireWrite(memberId, role, memberOrganizationId, organizationId);
+        authorization.requireWrite(bearer, organizationId, null);
         return assets.updateCategory(id, organizationId, request);
     }
 
@@ -92,36 +84,30 @@ public class AssetController {
     @DeleteMapping("/categories/{id}")
     @org.springframework.web.bind.annotation.ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteCategory(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @PathVariable @Positive Long id,
             @RequestParam @Positive Long organizationId) {
-        authorization.requireWrite(memberId, role, memberOrganizationId, organizationId);
+        authorization.requireWrite(bearer, organizationId, null);
         assets.deleteCategory(id, organizationId);
     }
 
     @PostMapping
     public ResponseEntity<AssetResponse> create(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @Valid @RequestBody AssetCreateRequest request) {
-        authorization.requireWrite(memberId, role, memberOrganizationId, request.organizationId());
+        authorization.requireWrite(bearer, request.organizationId(), request.complexId());
         AssetResponse created = assets.create(request);
         return ResponseEntity.created(URI.create("/api/assets/" + created.id())).body(created);
     }
 
     @PatchMapping("/{id}")
     public AssetResponse update(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long memberOrganizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearer,
             @PathVariable @Positive Long id,
             @RequestParam @Positive Long organizationId,
             @RequestParam(required = false) @Positive Long complexId,
             @Valid @RequestBody AssetUpdateRequest request) {
-        authorization.requireWrite(memberId, role, memberOrganizationId, organizationId);
+        authorization.requireWrite(bearer, organizationId, complexId);
         return assets.update(id, organizationId, complexId, request);
     }
 }
