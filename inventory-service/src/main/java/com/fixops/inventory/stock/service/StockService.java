@@ -4,6 +4,7 @@ import com.fixops.inventory.stock.dto.ReceiptRequest;
 import com.fixops.inventory.stock.dto.StockChangeResult;
 import com.fixops.inventory.stock.dto.UsageRequest;
 import com.fixops.inventory.stock.dto.UsageResult;
+import com.fixops.inventory.stock.client.WorkOrderCaller;
 import com.fixops.inventory.stock.client.WorkOrderClient;
 import com.fixops.inventory.stock.client.WorkOrderInfo;
 import com.fixops.inventory.stock.exception.WorkOrderNotFoundException;
@@ -175,7 +176,7 @@ public class StockService {
      *   그래서 확인은 잠그기 전에 하고, 잠근 뒤에는 DB 일만 빠르게 끝낸다.
      *   (확인과 차감 사이에 작업 상태가 바뀔 수 있다. 그 경우는 docs/06 대로 차감을 유효한 사실로 두고 필요하면 보상 원장)
      */
-    public UsageResult use(CurrentMember member, UsageRequest r) {
+    public UsageResult use(CurrentMember member, UsageRequest r, String authorization) {
         // 1) 입력 확인 (Controller 의 @Valid 가 이미 했지만, 다른 곳에서 불려도 안전하게)
         if (r.quantity() == null || r.quantity() <= 0) {
             throw new IllegalArgumentException("수량이 0보다 커야합니다.");
@@ -192,7 +193,9 @@ public class StockService {
         }
 
         // 3) 작업 확인
-        WorkOrderInfo workOrder = workOrders.findWorkOrder(organizationId, r.workOrderId())
+        //    authorization: 사용자가 보낸 JWT 를 WorkOrder 에 그대로 전달한다 (D11, "누가 묻는지")
+        WorkOrderCaller caller = new WorkOrderCaller(authorization, member.memberId());
+        WorkOrderInfo workOrder = workOrders.findWorkOrder(organizationId, r.workOrderId(), caller)
                 .orElseThrow(() -> new WorkOrderNotFoundException(r.workOrderId()));
         if (workOrder.organizationId() != organizationId) {
             throw new WorkOrderNotFoundException(r.workOrderId());   // 남의 단지 작업도 "없음"
