@@ -72,7 +72,8 @@ public class StockController {
             @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
             @RequestHeader(value = "X-User-Role", required = false) String role,
             @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
-            @RequestHeader(value = "Authorization", required = false) String authorization, // D11: WorkOrder 로 전달할 사용자 JWT
+            @RequestHeader(value = "Authorization", required = false) String bearerToken, // D11: WorkOrder 로 전달할 사용자 JWT
+            // (이름을 authorization 으로 하면 위의 권한 확인 필드 authorization 을 가려서 컴파일 오류가 난다)
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody UsageRequest request) {
 
@@ -82,7 +83,7 @@ public class StockController {
             throw new IllegalArgumentException("Idempotency-Key 와 operationKey 가 다릅니다.");
         }
 
-        UsageResult result = stockService.use(member, request, authorization);
+        UsageResult result = stockService.use(member, request, bearerToken);
 
         HttpStatus status = result.replayed() ? HttpStatus.OK : HttpStatus.CREATED;
         return ResponseEntity.status(status).body(ApiResponse.ok(result));
