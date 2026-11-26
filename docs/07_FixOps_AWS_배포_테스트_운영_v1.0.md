@@ -29,6 +29,9 @@ flowchart TB
  AI --> MCP[MCP Server]
  MCP -->|gRPC 9093| WO
  ME --> DB[(RDS PostgreSQL 16)]
+ ME --> RS[(Redis private)]
+ GW --> RS
+ ME --> SMTP[Gmail SMTP STARTTLS 587]
  AS --> DB
  WO --> DB
  IV --> DB
@@ -75,6 +78,28 @@ FROM pg_extension WHERE extname='vector';
 - 사업자등록 진위확인 API는 **사용하지 않음**. K-apt API Key는 Member 서버에만 두고, 실패 시 데모용 지정 fixture 사용.
 - 가상 명부만 사용, 실제 거주자의 연락처/개인정보 사용 금지.
 
+### 4.1 이메일 발송 및 주민 인증 설정
+
+Member Service에만 아래 환경변수를 주입한다. 예시는 비밀값을 포함하지 않는다.
+
+```dotenv
+VERIFICATION_EMAIL_PROVIDER=smtp
+VERIFICATION_SMS_PROVIDER=disabled
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_FROM=
+VERIFICATION_HASH_KEY=
+```
+
+- Gmail 계정의 2단계 인증과 앱 비밀번호 발급 가능 여부를 사전 확인한다. 계정과 앱 비밀번호는 서버 비밀 저장소에서 주입한다. MAIL_FROM은 인증 계정 또는 허용된 발신 주소로 설정한다.
+- SMTP 활성화 시 필수 값 누락은 시작 실패로 처리한다. 실제 인증 성공은 테스트 계정 발송으로 검증한다. STARTTLS 필수 및 연결/읽기/쓰기 제한을 유지한다. EC2의 TCP 587 외부 연결 가능 여부를 검증한다.
+- VERIFICATION_HASH_KEY는 Base64 인코딩된 32바이트 비밀키로 안정적으로 유지한다. 임의 교체 시 기존 인증 증명에 영향이 있으므로 교체 계획 필요.
+- Redis는 외부 공개 금지, Gateway/Member의 활성 SID 접근을 허용하고 장애 시 보호 요청을 차단한다. 09/10 운영 검증 계약 참조.
+- 코드 원문·OTP·SMTP 비밀번호·해시 키를 Git, 이미지, 로그, Trace, 스크린샷에 기록하지 않는다. 가상 명부 및 통제된 테스트 이메일만 사용한다.
+- V9 적용 전 백업 및 이전 이미지와의 호환성을 검증한다. 신규 인증 방식 데이터 생성 후 이전 버전으로 단순 롤백 가능한지 별도 확인한다.
+
 ## 5. 배포·롤백
 
 1. `main` 릴리스 태그/커밋 SHA 고정, GitHub Actions CI(Java·Python·FE·Proto·Contract) 통과.
@@ -95,7 +120,7 @@ FROM pg_extension WHERE extname='vector';
 | T04 | 타 단지 주민의 신고 접근 | 차단 |
 | T05 | XLSX 2000행 업로드/재업로드 | 중복 회원·중복 명부 없음, 검증 보고 |
 | T06 | 이름+동/호수만 매칭 | 자동 승인 불가 |
-| T07 | 인증된 연락처+활성 명부 일치 | 세대 소속 승인 |
+| T07 | 유효 등록 코드 또는 활성 SMS OTP + 활성 명부 및 UNIT 일치 | 세대 소속 승인 |
 | T08 | 퇴거/권한 회수 후 JWT | 민감 조회·변경 차단 |
 | T09 | TECHNICIAN 미배정 작업 완료 | 403 |
 | T10 | 동시 동일 작업자 예약 | 단 한 건 확정, 나머지 409 |
@@ -109,6 +134,20 @@ FROM pg_extension WHERE extname='vector';
 | T18 | AWS HTTPS/ALB | 보유 도메인 정상, 유효 TLS, 80→443 |
 | T19 | S3 비공개 | 익명 다운로드 거부, IAM Role로 정상 접근 |
 | T20 | DB vector | `vector` 확장 `0.8.2` 확인, RAG 검색 성공 |
+
+### 주민 인증 추가 회귀 검증 (미실행 체크리스트)
+
+| ID | 테스트 | 통과 조건 |
+|---|---|---|
+| T21 | SMTP 필수 설정 누락 및 실제 이메일 발송 | 설정 누락 시작 실패, 정상 설정에서 테스트 이메일 수신 |
+| T22 | SMS disabled 및 조회 실패 | 등록 코드만 표시, SMS 발송 차단 |
+| T23 | 코드 재발급·만료·회수·재사용 | 기존 코드 인증 불가, 원문 비노출 |
+| T24 | 동일 코드 동시 사용·인증 방식 간 중복 | 중복 연결/심사 생성 금지 |
+| T25 | 등록 코드 실패 5회/15분 | 추가 시도 429, 윈도우 종료 후 재시도 가능 |
+| T26 | 타 단지 ADMIN 발급/회수 | 권한 차단 |
+| T27 | 심사 대기 후 퇴거·재입주 | 이전 신청 반려 유지, 미사용 코드 무효화 |
+| T28 | 주민 승인·퇴거 후 Redis SID | 기존 세션으로 권한 접근 불가, 재로그인 후 최신 권한 |
+| T29 | 기존 DB V1~V8에서 V9 적용 | 기존 SMS 이력 보존, 신규 제약 정상 |
 
 **외부 API 장애와 실제 보안 결함을 구분**한다. 외부 API 대체는 데모 계정만, JWT·권한·DB 쓰기 기능은 Mock으로 통과 처리하지 않는다.
 
