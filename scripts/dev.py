@@ -94,6 +94,13 @@ def env_for(service,integrate=False):
         k=service.upper()+'_AUTHZ_KEY'
         env[k]=vals.get(k,'')
         if service=='asset':env['MEMBER_UNIT_INTERNAL_KEY']=vals.get('MEMBER_UNIT_INTERNAL_KEY','')
+    if service == 'member':
+        env['KAPT_CATALOG_SYNC_ENABLED'] = vals.get(
+            'KAPT_CATALOG_SYNC_ENABLED', 'false')
+    if service == 'asset':
+        env['BUILDING_REGISTER_SERVICE_KEY'] = (
+            vals.get('BUILDING_REGISTER_SERVICE_KEY')
+            or vals.get('KAPT_SERVICE_KEY', ''))
     return env
 
 def run(command,env=None,cwd=None):
