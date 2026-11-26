@@ -1,12 +1,13 @@
 # Build context: individual Java service directory
 FROM gradle:8.14.3-jdk21 AS builder
 WORKDIR /home/gradle/project
-COPY --chown=gradle:gradle settings.gradle build.gradle ./
+COPY --chown=gradle:gradle settings.gradle build.gradle gradlew ./
+COPY --chown=gradle:gradle gradle ./gradle
 COPY --chown=gradle:gradle src ./src
-# Avoid relying on an absent Gradle Wrapper in the initial scaffold.
-# After wrappers are committed, prefer ./gradlew --no-daemon bootJar.
-RUN gradle --no-daemon bootJar && \
-    find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' -exec cp {} /tmp/app.jar \;
+RUN chmod +x gradlew && \
+    ./gradlew --no-daemon bootJar && \
+    find build/libs -maxdepth 1 -name '*.jar' ! -name '*-plain.jar' \
+    -exec cp {} /tmp/app.jar \;
 
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
