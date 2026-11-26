@@ -47,6 +47,10 @@ public class ScheduleResponseDTO { // 예약 정보를 반환하는 DTO
 
     private Instant updatedAt;
 
+    private Long completedBy;
+
+    private Instant completedAt;
+
 
     public static ScheduleResponseDTO fromEntity(MaintenanceSchedule schedule) {
 
@@ -84,6 +88,8 @@ public class ScheduleResponseDTO { // 예약 정보를 반환하는 DTO
                                 .cancellationReason(schedule.getCancellationReason())
                                 .createdAt(schedule.getCreatedAt())
                                 .updatedAt(schedule.getUpdatedAt())
+                                .completedBy(schedule.getCompletedBy())
+                                .completedAt(schedule.getCompletedAt())
                                 .build();
     }
 }

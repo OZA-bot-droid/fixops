@@ -105,4 +105,49 @@ public class BookingAccessPolicy {
         }
     }
 
+    // 예약 취소 권한 검증
+    public void validateCancelSchedule(WorkOrder workOrder, MaintenanceSchedule schedule, Long userId) {
+
+        validateActor(userId);
+
+
+        // 최초 예약 요청자
+        boolean requester = Objects.equals(schedule.getRequestedBy(), userId);
+
+
+        // 해당 예약 및 현재 WorkOrder의 담당 기술자
+        boolean technician = Objects.equals(schedule.getTechnicianId(), userId) && Objects.equals(workOrder.getAssignedTo(), userId);
+
+
+        // WorkOrder 생성 관리자
+        boolean creatorAdmin = Objects.equals(workOrder.getReportedBy(), userId);
+
+
+        if (!requester && !technician && !creatorAdmin) {
+
+            throw new BusinessException(ErrorCode.ORG_ACCESS_DENIED);
+        }
+
+
+        // TODO: Member 서비스 연동 이후
+        // 실제 관리자 역할 및 조직·단지 관리 권한 검증
+
+
+
+    }
+
+    // 방문 완료 권한 검증
+    public void validateCompleteSchedule(WorkOrder workOrder, MaintenanceSchedule schedule, Long userId) {
+
+        validateActor(userId);
+
+        boolean scheduleTechnician = Objects.equals(schedule.getTechnicianId(), userId);
+
+        boolean assignedTechnician = Objects.equals(workOrder.getAssignedTo(), userId);
+
+        if (!scheduleTechnician || !assignedTechnician) {
+
+            throw new BusinessException(ErrorCode.ORG_ACCESS_DENIED);
+        }
+    }
 }

@@ -33,6 +33,13 @@ public class BookingIdempotencyService {
     // 현재 제안 거절
     public static final String REJECT_PROPOSAL = "REJECT_PROPOSAL";
 
+    // 예약 취소
+    public static final String CANCEL_SCHEDULE = "CANCEL_SCHEDULE";
+
+    // 방문 완료
+    public static final String COMPLETE_SCHEDULE = "COMPLETE_SCHEDULE";
+
+
     // 요청 키 등록 및 기존 요청 확인
     public ClaimResult claim(Long workOrderId, Long organizationId, Long actorId, String operation, String requestKey, String requestHash, Instant now) {
 

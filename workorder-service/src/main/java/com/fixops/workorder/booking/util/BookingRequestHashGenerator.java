@@ -101,4 +101,20 @@ public class BookingRequestHashGenerator {
 
         return sha256(payload);
     }
+
+    // 예약 취소 요청 Hash
+    public String generateCancelHash(Long scheduleId, String reason) {
+
+        String payload = encode(String.valueOf(scheduleId), normalizeReason(reason));
+
+        return sha256(payload);
+    }
+
+    // 방문 완료 요청 Hash
+    public String generateCompleteHash(Long scheduleId) {
+
+        String payload = encode(String.valueOf(scheduleId));
+
+        return sha256(payload);
+    }
 }

@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.Instant;
+import java.util.Objects;
 
 @Entity
 @Table(name = "maintenance_schedule")
@@ -83,10 +84,17 @@ public class MaintenanceSchedule extends BaseEntity {
     private String cancellationReason;
 
 
-    // =================================================
-    // 1. 최초 Proposal 연결
-    // =================================================
+    // 방문 완료 처리자 ID
+    @Column(name = "completed_by")
+    private Long completedBy;
 
+
+    // 방문 완료 시각
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
+
+    // 최초 Proposal 연결
     public void initializeProposal(Long proposalId) {
 
         if (status != MaintenanceScheduleStatus.PENDING || this.currentProposalId != null) {
@@ -100,10 +108,7 @@ public class MaintenanceSchedule extends BaseEntity {
     }
 
 
-    // =================================================
-    // 2. 기술자 대체 시간 제안
-    // =================================================
-
+    // 기술자 대체 시간 제안
     public void counterPropose(Long proposalId, Instant startAt, Instant endAt) {
 
         if (status != MaintenanceScheduleStatus.PENDING) {
@@ -117,10 +122,7 @@ public class MaintenanceSchedule extends BaseEntity {
     }
 
 
-    // =================================================
-    // 3. 예약 요청자 시간 재제안
-    // =================================================
-
+    // 예약 요청자 시간 재제안
     public void rePropose(Long proposalId, Instant startAt, Instant endAt) {
 
         if (status != MaintenanceScheduleStatus.COUNTER_PROPOSED) {
@@ -133,11 +135,7 @@ public class MaintenanceSchedule extends BaseEntity {
         this.status = MaintenanceScheduleStatus.PENDING;
     }
 
-
-    // =================================================
-    // 4. 예약 확정
-    // =================================================
-
+    // 예약 확정
     public void confirm(Long proposalId, Instant now) {
 
         validateNegotiatingStatus();
@@ -149,10 +147,7 @@ public class MaintenanceSchedule extends BaseEntity {
     }
 
 
-    // =================================================
-    // 5. 예약 거절
-    // =================================================
-
+    // 예약 거절
     public void reject() {
 
         validateNegotiatingStatus();
@@ -161,10 +156,7 @@ public class MaintenanceSchedule extends BaseEntity {
     }
 
 
-    // =================================================
-    // 6. 예약 철회 및 취소
-    // =================================================
-
+    // 예약 철회 및 취소
     public void cancel(Long userId, String reason, Instant now) {
 
         if (!status.isActive()) {
@@ -184,36 +176,41 @@ public class MaintenanceSchedule extends BaseEntity {
     }
 
 
-    // =================================================
-    // 7. 방문 완료
-    // =================================================
-
-    public void complete(Instant now) {
+    // 방문 완료
+    public void complete(Long userId, Instant now) {
 
         if (status != MaintenanceScheduleStatus.CONFIRMED) {
 
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
         }
 
-        if (now == null) {
+
+        if (userId == null || userId <= 0 || now == null) {
 
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
 
-        // 방문 시작 전 완료 처리 방지
+
+        if (!Objects.equals(technicianId, userId)) {
+
+            throw new BusinessException(ErrorCode.ORG_ACCESS_DENIED);
+        }
+
+
         if (now.isBefore(startAt)) {
 
             throw new BusinessException(ErrorCode.INVALID_STATE_TRANSITION);
         }
 
+
         this.status = MaintenanceScheduleStatus.COMPLETED;
+
+        this.completedBy = userId;
+
+        this.completedAt = now;
     }
 
-
-    // =================================================
-    // 8. 예약 협의 만료
-    // =================================================
-
+    // 예약 협의 만료
     public void expire() {
 
         validateNegotiatingStatus();
@@ -222,10 +219,7 @@ public class MaintenanceSchedule extends BaseEntity {
     }
 
 
-    // =================================================
-    // 9. 공통 검증 및 내부 메서드
-    // =================================================
-
+    // 공통 검증 및 내부 메서드
     private void updateCurrentProposal(Long proposalId, Instant startAt, Instant endAt) {
 
         validateProposalId(proposalId);

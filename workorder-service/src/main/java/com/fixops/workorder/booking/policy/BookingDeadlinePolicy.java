@@ -81,10 +81,7 @@ public class BookingDeadlinePolicy { // Service가 전달한 기준 시각과 �
     }
 
 
-    // =================================================
-    // 3. 예약 및 제안 시간 검증
-    // =================================================
-
+    // 예약 및 제안 시간 검증
     public void validateProposedTime(Instant startAt, Instant endAt, Instant now) {
 
         if (startAt == null || endAt == null || now == null) {
@@ -109,11 +106,7 @@ public class BookingDeadlinePolicy { // Service가 전달한 기준 시각과 �
         }
     }
 
-
-    // =================================================
-    // 4. 전체 협의 유효기간 검증
-    // =================================================
-
+    // 전체 협의 유효기간 검증
     public void validateNegotiationDeadline(Instant now, Instant negotiationExpiresAt) {
 
         if (now == null || negotiationExpiresAt == null) {
