@@ -15,7 +15,7 @@ services:
       - fixops_pgdata:/var/lib/postgresql/data
       - ./infra/postgres/bootstrap:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -23,29 +23,79 @@ services:
       - "${DB_BIND_IP:-127.0.0.1}:${DB_PORT:-5432}:5432"
     shm_size: 256mb
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    command: [ "sh", "-c", "exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\"" ]
+    volumes:
+      - fixops_redisdata:/data
+    healthcheck:
+      test: [ "CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG" ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    ports:
+      - "${REDIS_BIND_IP:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
+
   member:
     build: { context: ./member-service }
     environment:
       PORT: 8081
+      ASSET_AUTHZ_KEY: ${ASSET_AUTHZ_KEY:-}
+      WORKORDER_AUTHZ_KEY: ${WORKORDER_AUTHZ_KEY:-}
+      INVENTORY_AUTHZ_KEY: ${INVENTORY_AUTHZ_KEY:-}
+      AI_AUTHZ_KEY: ${AI_AUTHZ_KEY:-}
+      KAPT_SERVICE_KEY: ${KAPT_SERVICE_KEY:-}
+      KAPT_CATALOG_SYNC_ENABLED: ${KAPT_CATALOG_SYNC_ENABLED:-false}
+      ASSET_SERVICE_URL: http://asset:8082
+      MEMBER_UNIT_INTERNAL_KEY: ${MEMBER_UNIT_INTERNAL_KEY:-}
       DB_URL: jdbc:postgresql://postgres:5432/member_db
       DB_USER: member_app
       DB_PASSWORD: ${MEMBER_DB_PASSWORD:?required}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
       JWT_PRIVATE_KEY_PATH: /app/keys/private_key.pem
       JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
       PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
       PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
-      DEMO_EMAIL_VERIFICATION_BYPASS: ${DEMO_EMAIL_VERIFICATION_BYPASS:-false}
-      DEMO_BUILDING_APPROVAL_BYPASS: ${DEMO_BUILDING_APPROVAL_BYPASS:-false}
+      VERIFICATION_PROVIDER: ${VERIFICATION_PROVIDER:-disabled}
+      VERIFICATION_EMAIL_PROVIDER: ${VERIFICATION_EMAIL_PROVIDER:-${VERIFICATION_PROVIDER:-disabled}}
+      VERIFICATION_SMS_PROVIDER: ${VERIFICATION_SMS_PROVIDER:-${VERIFICATION_PROVIDER:-disabled}}
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-${MAIL_USERNAME:-}}
+      FIXOPS_PUBLIC_URL: ${FIXOPS_PUBLIC_URL:-}
+      VERIFICATION_HASH_KEY: ${VERIFICATION_HASH_KEY:-}
+      VERIFICATION_ENDPOINT: ${VERIFICATION_ENDPOINT:-}
+      VERIFICATION_SECRET: ${VERIFICATION_SECRET:-}
+      VERIFICATION_DEMO_EMAILS: ${VERIFICATION_DEMO_EMAILS:-}
+      VERIFICATION_DEMO_PHONES: ${VERIFICATION_DEMO_PHONES:-}
+      SPRING_PROFILES_ACTIVE: ${MEMBER_SPRING_PROFILES_ACTIVE:-default}
+      ROSTER_ENCRYPTION_KEY: ${ROSTER_ENCRYPTION_KEY:-}
+      ROSTER_LOOKUP_KEY: ${ROSTER_LOOKUP_KEY:-}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+
+      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8088}
     volumes:
       - ./local-secrets/jwt:/app/keys:ro
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     restart: on-failure
 
   asset:
     build: { context: ./asset-service }
     environment:
       PORT: 8082
+      MEMBER_SERVICE_URL: http://member:8081
+      BUILDING_REGISTER_SERVICE_KEY: ${BUILDING_REGISTER_SERVICE_KEY:-${KAPT_SERVICE_KEY:-}}
+      ASSET_AUTHZ_KEY: ${ASSET_AUTHZ_KEY:-}
+      MEMBER_UNIT_INTERNAL_KEY: ${MEMBER_UNIT_INTERNAL_KEY:-}
       DB_URL: jdbc:postgresql://postgres:5432/asset_db
       DB_USER: asset_app
       DB_PASSWORD: ${ASSET_DB_PASSWORD:?required}
@@ -84,7 +134,7 @@ services:
       DB_NAME: ai_db
       DB_USER: ai_app
       DB_PASSWORD: ${AI_DB_PASSWORD:?required}
-    command: ["alembic", "upgrade", "head"]
+    command: [ "alembic", "upgrade", "head" ]
     depends_on:
       postgres: { condition: service_healthy }
     restart: "no"
@@ -127,6 +177,9 @@ services:
     environment:
       PORT: 8080
       JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
       MEMBER_SERVICE_URL: http://member:8081
       ASSET_SERVICE_URL: http://asset:8082
       WORKORDER_SERVICE_URL: http://workorder:8083
@@ -140,6 +193,7 @@ services:
       workorder: { condition: service_started }
       inventory: { condition: service_started }
       ai: { condition: service_started }
+      redis: { condition: service_healthy }
     restart: on-failure
 
   frontend:
@@ -152,3 +206,4 @@ services:
 
 volumes:
   fixops_pgdata:
+  fixops_redisdata:

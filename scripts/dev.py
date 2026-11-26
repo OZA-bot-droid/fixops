@@ -28,7 +28,10 @@ def init():
     if CRED.exists():
         print('.env 유지: 기존 DB 비밀번호를 변경하지 않습니다')
     else:
-        data={'POSTGRES_PASSWORD':secrets.token_hex(24)}
+        data={
+            'POSTGRES_PASSWORD':secrets.token_hex(24),
+            'REDIS_PASSWORD':secrets.token_hex(24),
+            }
         for n in DBS:data[n.upper()+'_DB_PASSWORD']=secrets.token_hex(24)
         template=(ROOT/'.env.example').read_text(encoding='utf-8')
         for k,v in data.items(): template=re.sub(rf'(?m)^{k}=.*$',f'{k}={v}',template)
@@ -55,6 +58,25 @@ def env_for(service,integrate=False):
     env['APP_ENV']='integration' if integrate else 'local'
     env['JWT_PRIVATE_KEY_PATH']=str(KEYS/'private_key.pem')
     env['JWT_PUBLIC_KEY_PATH']=str(KEYS/'public_key.pem')
+    # Redis configuration for local Java services
+    if service in ('member', 'gateway'):
+        redis_password = vals.get('REDIS_PASSWORD', '')
+        if (not redis_password or redis_password.startswith('REPLACE_')):
+            die('REDIS_PASSWORD를 .env에 설정하세요')
+        redis_host = (os.environ.get('INTEGRATION_REDIS_HOST',host)
+            if integrate else vals.get('REDIS_HOST','127.0.0.1'))
+        env.update(REDIS_HOST=redis_host, REDIS_PORT=vals.get('REDIS_PORT','6379'),
+            REDIS_PASSWORD=redis_password,
+        )
+    if service == 'member':
+        env['AUTH_COOKIE_SECURE'] = vals.get(
+            'AUTH_COOKIE_SECURE',
+            'false'
+        )
+        env['AUTH_ALLOWED_ORIGINS'] = vals.get(
+            'AUTH_ALLOWED_ORIGINS',
+            'http://localhost:5173,http://localhost:8088'
+        )
     if service in DBS:
         name=DBS[service]
         env.update(DB_URL=f'jdbc:postgresql://{host}:5432/{name}',DB_USER=ROLES[service],DB_PASSWORD=vals[service.upper()+'_DB_PASSWORD'])
@@ -63,10 +85,15 @@ def env_for(service,integrate=False):
         env[name.upper()+'_SERVICE_URL']=f'http://127.0.0.1:{dict(member=8081,asset=8082,workorder=8083,inventory=8084,ai=8085)[name]}'
     env['WORKORDER_GRPC_TARGET']='127.0.0.1:9093'
     env['MCP_SERVER_URL']='http://127.0.0.1:8090/mcp'
-    for k in ('DEMO_BUILDING_APPROVAL_BYPASS','DEMO_EMAIL_VERIFICATION_BYPASS','PLATFORM_ADMIN_EMAIL','PLATFORM_ADMIN_PASSWORD'):
-        env[k]=vals.get(k,'false' if k.startswith('DEMO_') else '')
-    env.setdefault('DEMO_BUILDING_APPROVAL_BYPASS','false')
-    env.setdefault('DEMO_EMAIL_VERIFICATION_BYPASS','false')
+    member_keys=('PLATFORM_ADMIN_EMAIL','PLATFORM_ADMIN_PASSWORD','ROSTER_ENCRYPTION_KEY','ROSTER_LOOKUP_KEY','VERIFICATION_PROVIDER','VERIFICATION_EMAIL_PROVIDER','VERIFICATION_SMS_PROVIDER','MAIL_HOST','MAIL_PORT','MAIL_USERNAME','MAIL_PASSWORD','MAIL_FROM','FIXOPS_PUBLIC_URL','VERIFICATION_HASH_KEY','VERIFICATION_ENDPOINT','VERIFICATION_SECRET','VERIFICATION_DEMO_EMAILS','VERIFICATION_DEMO_PHONES','KAPT_SERVICE_KEY','MEMBER_UNIT_INTERNAL_KEY','ASSET_AUTHZ_KEY','WORKORDER_AUTHZ_KEY','INVENTORY_AUTHZ_KEY','AI_AUTHZ_KEY')
+    if service == 'member':
+        for k in member_keys: env[k]=vals.get(k,'')
+        env['VERIFICATION_PROVIDER']=vals.get('VERIFICATION_PROVIDER','disabled')
+        env['SPRING_PROFILES_ACTIVE']=vals.get('MEMBER_SPRING_PROFILES_ACTIVE','local')
+    elif service in ('asset','workorder','inventory','ai'):
+        k=service.upper()+'_AUTHZ_KEY'
+        env[k]=vals.get(k,'')
+        if service=='asset':env['MEMBER_UNIT_INTERNAL_KEY']=vals.get('MEMBER_UNIT_INTERNAL_KEY','')
     return env
 
 def run(command,env=None,cwd=None):
@@ -118,8 +145,11 @@ def check_db():
 
 def print_env(service,integ):
     env=env_for(service,integ)
-    for name in ['APP_ENV','SPRING_PROFILES_ACTIVE','DB_URL','DB_USER','JWT_PUBLIC_KEY_PATH','WORKORDER_GRPC_TARGET']:
+    names=['APP_ENV','SPRING_PROFILES_ACTIVE','DB_URL','DB_USER','JWT_PUBLIC_KEY_PATH','WORKORDER_GRPC_TARGET','REDIS_HOST','REDIS_PORT',]
+    for name in names:
         if name in env:print(name+'='+env[name])
+    if service in ('member','gateway'):
+        print('REDIS_PASSWORD='+('CONFIGURED' if env.get('REDIS_PASSWORD') else 'MISSING'))
     print('DB_PASSWORD / DATABASE_URL / JWT 개인키 값은 화면에 표시하지 않습니다')
 
 def launch_service(service,integ):

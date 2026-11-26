@@ -3,6 +3,29 @@ server:
 spring:
   application:
     name: member-service
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      mail.smtp.ssl.checkserveridentity: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   datasource:
     url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/member_db}
     username: ${DB_USER:member_app}
@@ -16,6 +39,34 @@ spring:
     baseline-on-migrate: false
     locations: classpath:db/migration
 fixops:
+  kapt:
+    service-key: ${KAPT_SERVICE_KEY:}
+    catalog-sync-enabled: ${KAPT_CATALOG_SYNC_ENABLED:false}
+  asset:
+    url: ${ASSET_SERVICE_URL:http://127.0.0.1:8082}
+  internal:
+    asset-authz-key: ${ASSET_AUTHZ_KEY:}
+    workorder-authz-key: ${WORKORDER_AUTHZ_KEY:}
+    inventory-authz-key: ${INVENTORY_AUTHZ_KEY:}
+    ai-authz-key: ${AI_AUTHZ_KEY:}
+    member-unit-key: ${MEMBER_UNIT_INTERNAL_KEY:}
+  verification:
+    email-provider: ${VERIFICATION_EMAIL_PROVIDER:${VERIFICATION_PROVIDER:disabled}}
+    sms-provider: ${VERIFICATION_SMS_PROVIDER:${VERIFICATION_PROVIDER:disabled}}
+    mail-from: ${MAIL_FROM:${MAIL_USERNAME:}}
+    hash-key: ${VERIFICATION_HASH_KEY:}
+    endpoint: ${VERIFICATION_ENDPOINT:}
+    secret: ${VERIFICATION_SECRET:}
+    demo-emails: ${VERIFICATION_DEMO_EMAILS:}
+    demo-phones: ${VERIFICATION_DEMO_PHONES:}
+  onboarding:
+    public-url: ${FIXOPS_PUBLIC_URL:}
+  roster:
+    encryption-key: ${ROSTER_ENCRYPTION_KEY:}
+    lookup-key: ${ROSTER_LOOKUP_KEY:}
+  cookie:
+    secure: ${AUTH_COOKIE_SECURE:false}
+    allowed-origins: ${AUTH_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:8088}
   jwt:
     issuer: fixops-auth
     audience: fixops-api
@@ -23,9 +74,6 @@ fixops:
     public-key-path: ${JWT_PUBLIC_KEY_PATH:./local-secrets/jwt/public_key.pem}
     access-minutes: 15
     refresh-days: 7
-  demo:
-    email-verification-bypass: ${DEMO_EMAIL_VERIFICATION_BYPASS:false}
-    building-approval-bypass: ${DEMO_BUILDING_APPROVAL_BYPASS:false}
   bootstrap:
     platform-email: ${PLATFORM_ADMIN_EMAIL:}
     platform-password: ${PLATFORM_ADMIN_PASSWORD:}
