@@ -3,11 +3,13 @@
 무엇을 확인하나
   같은 순간에 요청이 몰려도 재고가 틀리지 않는지. docs/07 T12 "재고 부족/동시 차감: 음수 불가, 원장 1회".
 
-준비
-  1) postgres + inventory 를 가짜 WorkOrder 를 켜고 실행 (부품 사용 API 가 WorkOrder 확인을 하기 때문)
+준비 (D13 부터 로그인 토큰이 필요하다)
+  1) postgres·redis·member(·gateway) 를 띄우고, inventory 를 가짜 WorkOrder 를 켜고 실행
        PowerShell:  $env:WORKORDER_FAKE="true"; python scripts/dev.py run inventory
-  2) 다른 창에서 이 스크립트 실행
-       python inventory-service/concurrency/concurrency_check.py
+  2) 브라우저에서 ADMIN 계정으로 로그인 → 개발자 도구(F12) → Network → 아무 /api 요청
+     → Request Headers 의 Authorization: Bearer 뒤의 값(eyJ...)을 복사 (15분이면 만료)
+  3) 다른 창에서 이 스크립트 실행 (BUILDING 조직이면 --complex-id 도)
+       python inventory-service/concurrency/concurrency_check.py --token eyJ... --org-id 1 --complex-id 3
   3) 끝나면 ledger_check.sql 로 DB 를 직접 확인 (스크립트가 마지막에 명령을 알려 줌)
 
 Python 기본 라이브러리만 쓴다 (설치할 것 없음). 매번 새 부품을 만들어 쓰므로 여러 번 돌려도 된다.
@@ -34,10 +36,14 @@ RUN = str(int(time.time() * 1000))   # 이번 실행을 구분하는 번호 (SKU
 # ======================================================================
 
 class Api:
-    def __init__(self, base_url: str, member_id: int, org_id: int, role: str = "ADMIN"):
+    """D13: 헤더(X-Member-Id 등) 대신 로그인 JWT + ?organizationId=&complexId= 로 보낸다.
+    서버가 Member 에 "이 토큰의 주인이 이 조직의 ADMIN 인가"를 확인한다 (화면과 같은 방식)."""
+
+    def __init__(self, base_url: str, token: str, org_id: int, complex_id: int | None = None):
         self.base = base_url.rstrip("/")
-        self.headers = {"X-Member-Id": str(member_id), "X-User-Role": role,
-                        "X-Org-Id": str(org_id), "Content-Type": "application/json"}
+        token = token.removeprefix("Bearer ").strip()
+        self.headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        self.scope = f"organizationId={org_id}" + (f"&complexId={complex_id}" if complex_id else "")
 
     def call(self, method: str, path: str, body: dict | None = None, key: str | None = None):
         """요청을 보내고 (상태 코드, 응답 JSON) 을 돌려준다. 오류 응답도 예외 없이 돌려준다."""
@@ -45,7 +51,8 @@ class Api:
         if key:
             headers["Idempotency-Key"] = key
         data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(self.base + path, data=data, method=method, headers=headers)
+        url = self.base + path + ("&" if "?" in path else "?") + self.scope   # 모든 요청에 조직·단지를 붙인다
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=15) as res:
                 return res.status, json.loads(res.read() or b"{}")
@@ -212,8 +219,14 @@ def preflight(api: Api):
         status, _ = api.call("GET", "/inventory/parts?size=1")
     except urllib.error.URLError as e:
         raise SystemExit(f"서버에 연결할 수 없습니다: {api.base} ({e.reason}). inventory 서버를 먼저 실행하세요.")
+    if status == 401:
+        raise SystemExit("401: 토큰이 없거나 만료됐습니다. 브라우저에서 다시 복사해 --token 으로 넘기세요 (15분 만료).")
+    if status == 403:
+        raise SystemExit("403: 이 토큰의 주인이 이 조직(단지)의 ADMIN 이 아닙니다. --org-id / --complex-id 와 계정을 확인하세요.")
+    if status == 503:
+        raise SystemExit("503: 권한 확인(Member)에 연결할 수 없습니다. member 가 떠 있는지, .env 의 INVENTORY_AUTHZ_KEY 를 확인하세요.")
     if status != 200:
-        raise SystemExit(f"부품 목록 조회가 {status} 입니다. 헤더(회원·역할·단지) 값을 확인하세요.")
+        raise SystemExit(f"부품 목록 조회가 {status} 입니다.")
     part = api.create_part("pre")
     api.receive(part, 1, f"cc-{RUN}-pre-in")
     status, body = api.use(part, 1, f"cc-{RUN}-pre-use")
@@ -231,12 +244,13 @@ def main():
 
     ap = argparse.ArgumentParser(description="D10 원장 동시성 확인")
     ap.add_argument("--base-url", default="http://localhost:8084")
-    ap.add_argument("--member-id", type=int, default=1, help="가짜 WorkOrder 의 배정 기사 번호와 같아야 함 (기본 1)")
-    ap.add_argument("--org-id", type=int, default=1)
+    ap.add_argument("--token", required=True, help="ADMIN 계정의 로그인 JWT (브라우저 개발자 도구에서 복사)")
+    ap.add_argument("--org-id", type=int, required=True, help="상단에서 고른 조직 번호")
+    ap.add_argument("--complex-id", type=int, default=None, help="BUILDING 조직이면 단지 번호 (FACTORY 면 생략)")
     ap.add_argument("-n", type=int, default=20, help="한 시나리오에서 동시에 보낼 요청 수")
     args = ap.parse_args()
 
-    api = Api(args.base_url, args.member_id, args.org_id)
+    api = Api(args.base_url, args.token, args.org_id, args.complex_id)
     print(f"대상: {api.base}  /  동시 요청: {args.n}건  /  실행 번호: {RUN}")
     preflight(api)
 
