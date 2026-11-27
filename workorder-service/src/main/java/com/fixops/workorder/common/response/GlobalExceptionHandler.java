@@ -14,6 +14,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.validation.BindException;
+
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -126,5 +128,14 @@ public class GlobalExceptionHandler {
         }
 
         return null;
+    }
+
+
+    // 검색 DTO 파라미터 바인딩 실패
+    // 잘못된 검색 요청에서도 공통 오류 형식을 반환하기 위함
+    @ExceptionHandler(BindException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBindingException(BindException ex) {
+
+        return errorResponse(ErrorCode.INVALID_INPUT);
     }
 }

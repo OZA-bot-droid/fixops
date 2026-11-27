@@ -110,6 +110,7 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/workorder_db
       DB_USER: workorder_app
       DB_PASSWORD: ${WORKORDER_DB_PASSWORD:?required}
+      KAPT_SERVICE_KEY: ${KAPT_SERVICE_KEY}
     depends_on:
       postgres: { condition: service_healthy }
     restart: on-failure

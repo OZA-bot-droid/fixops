@@ -9,6 +9,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.fixops.workorder.booking.dto.ScheduleProposalResponseDTO;
+import com.fixops.workorder.booking.service.ScheduleQueryService;
+import com.fixops.workorder.common.response.ApiResponse;
+
+import java.util.List;
+
 
 @RestController
 @RequestMapping("/schedules/{scheduleId}/proposals")
@@ -16,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 public class ScheduleProposalController {
 
     private final ScheduleProposalService proposalService;
+    private final ScheduleQueryService scheduleQueryService;
 
     // 1. 대체 시간 제안 및 재제안
     @PostMapping
@@ -54,5 +61,14 @@ public class ScheduleProposalController {
     private ResponseEntity<String> toResponseEntity(BookingIdempotencyService.StoredResponse response) {
 
         return ResponseEntity.status(response.status()).contentType(MediaType.APPLICATION_JSON).body(response.body());
+    }
+
+    // 전체 방문 일정 협의 이력 조회
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<ScheduleProposalResponseDTO>>> getProposals(@RequestHeader("X-Member-Id") Long userId, @PathVariable Long scheduleId) {
+
+        List<ScheduleProposalResponseDTO> response = scheduleQueryService.getProposals(scheduleId, userId);
+
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

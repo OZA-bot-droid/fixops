@@ -101,6 +101,11 @@ def env_for(service,integrate=False):
         env['BUILDING_REGISTER_SERVICE_KEY'] = (
             vals.get('BUILDING_REGISTER_SERVICE_KEY')
             or vals.get('KAPT_SERVICE_KEY', ''))
+    # WorkOrder 공휴일 API 인증키 주입
+    if service == 'workorder':
+        env['KAPT_SERVICE_KEY'] = vals.get(
+            'KAPT_SERVICE_KEY', ''
+        )
     return env
 
 def run(command,env=None,cwd=None):

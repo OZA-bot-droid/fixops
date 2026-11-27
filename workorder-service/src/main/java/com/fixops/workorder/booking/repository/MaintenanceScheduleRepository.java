@@ -14,9 +14,11 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-public interface MaintenanceScheduleRepository
-        extends JpaRepository<MaintenanceSchedule, Long> {
+
+public interface MaintenanceScheduleRepository extends JpaRepository<MaintenanceSchedule, Long>, JpaSpecificationExecutor<MaintenanceSchedule> {
+// JpaSpecificationExecutor => 동적 쿼리를 쉽게 작성할 수 있도록 돕는 인터페이스
 
 
     // 작업지시별 예약 이력 조회(WorkOrder에 활성 예약이 존재하는지 조회)

@@ -38,3 +38,30 @@ booking:
 
   # 만료 대상 조회 주기 (밀리초)
   expiry-check-interval-ms: ${BOOKING_EXPIRY_CHECK_INTERVAL_MS:60000}
+
+  # 방문 시간 정책
+  time-zone: "Asia/Seoul"
+  business-start-time: "09:00"
+  business-end-time: "20:00"
+  slot-interval-minutes: 30
+  minimum-duration-minutes: 30
+  maximum-duration-minutes: 480
+  max-advance-days: 30
+
+  # 방문 제한 날짜
+  allow-weekends: false
+  allow-holidays: false
+
+  # 공공데이터 API 설정
+  holiday-api:
+    base-url: "https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService"
+    service-key: ${KAPT_SERVICE_KEY}
+    connect-timeout: 3s
+    read-timeout: 5s
+
+    refresh-after: 24h
+    max-stale-age: 7d
+
+    initial-delay-ms: 1000
+    sync-interval-ms: 3600000
+    prefetch-days: 2
