@@ -13,6 +13,7 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   "langchain[mcp]>=1.4,<2",
   "langchain-openai>=1,<2",
+  "pymupdf>=1.26,<2",
 ]
 
 [dependency-groups]
