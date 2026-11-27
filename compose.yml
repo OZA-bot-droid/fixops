@@ -122,6 +122,9 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/inventory_db
       DB_USER: inventory_app
       DB_PASSWORD: ${INVENTORY_DB_PASSWORD:?required}
+      MEMBER_SERVICE_URL: http://member:8081            # 권한 확인 (Asset 과 같은 방식, D13)
+      INVENTORY_AUTHZ_KEY: ${INVENTORY_AUTHZ_KEY:-}     # Member 에게 보여 주는 서비스 열쇠 (.env 값)
+      WORKORDER_SERVICE_URL: http://workorder:8083      # 부품 사용 시 작업 상태 확인 (D11)
     depends_on:
       postgres: { condition: service_healthy }
     restart: on-failure
