@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Alert, Button, Card } from "../../../components/ui";
 import { listParts, listUsages } from "../inventoryApi";
-import { MockNotice, Table, formatTime } from "../inventoryUi";
+import { Table, formatTime } from "../inventoryUi";
 import UsePartModal from "./UsePartModal";
 import useLoad from "./useLoad";
 
 /**
  * ADMIN · 작업별 부품 사용 (Figma 26)
- *   사용 내역 조회: ❌ GET /inventory/usages?workOrderId= 없음 (D12, 승인 대기) → 예시 데이터
+ *   사용 내역 조회: ✅ GET /inventory/usages?workOrderId= (D12)
  *   사용 등록    : ✅ POST /inventory/usages
  */
 export default function UsageByWorkOrderTab() {
@@ -26,11 +26,10 @@ export default function UsageByWorkOrderTab() {
 
   return (
     <>
-      <MockNotice apiMissing />
       <Card className="mb-5 p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <input value={workOrderId} onChange={(e) => setWorkOrderId(e.target.value.replace(/\D/g, ""))} placeholder="⌕ 작업지시 번호로 찾기 (예: 1045)"
-            className="h-10 min-w-[260px] flex-1 rounded-[9px] bg-fixops-background px-4 text-[13px] outline-none focus:ring-2 focus:ring-blue-100" />
+            className="h-10 w-full flex-1 rounded-[9px] sm:w-auto sm:min-w-[260px] bg-fixops-background px-4 text-[13px] outline-none focus:ring-2 focus:ring-blue-100" />
           <Button onClick={() => setOpen(true)}>+ 부품 사용 등록</Button>
         </div>
       </Card>

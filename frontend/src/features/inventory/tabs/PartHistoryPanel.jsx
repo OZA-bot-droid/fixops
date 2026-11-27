@@ -1,17 +1,21 @@
 import { useState } from "react";
-import { Alert, Button, Field, Modal } from "../../../components/ui";
+import { Alert, Button, Field } from "../../../components/ui";
 import { inventoryErrorMessage, listMovements, newOperationKey, receiveStock } from "../inventoryApi";
 import { Delta, MovementBadge, Pills, StockBadge, Table, formatTime } from "../inventoryUi";
+import { PartImage } from "../inventoryImages";
 import useLoad from "./useLoad";
 
 /**
  * 부품 하나의 재고 변동 이력 (부품·재고 목록에서 SKU 또는 부품명을 누르면 열림)
- *   이력 조회 : ❌ GET /inventory/movements?partId= 없음 (승인 대기) → 예시 데이터
+ *   모달 창이 아니라, 목록 표가 있던 카드 자리를 이 화면으로 바꿔 보여 준다.
+ *   오른쪽 위 [← 목록으로] 버튼으로 다시 목록으로 돌아간다.
+ *   이력 조회 : ✅ GET /inventory/movements?partId= (D12)
  *   부품 입고 : ✅ POST /inventory/receipts — 오른쪽 위 "부품 입고" 버튼으로 이 창 안에서 바로 입고
  *
+ * onBack   : [← 목록으로] 를 누르면 부르는 함수
  * onChanged: 입고가 끝나면 부르는 함수 (목록의 수량을 새로 고치기 위해)
  */
-export default function PartHistoryModal({ part, onClose, onChanged }) {
+export default function PartHistoryPanel({ part, onBack, onChanged }) {
   const [type, setType] = useState("ALL");
   const [quantity, setQuantity] = useState(part.quantity);   // 입고 후 바뀐 수량을 창 안에서 바로 보여 주기 위해
   const [receiving, setReceiving] = useState(false);          // 입고 입력칸 열림 여부
@@ -41,8 +45,20 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
   ];
 
   return (
-    <Modal open onClose={onClose} title={`${part.sku} · ${part.name}`} description="이 부품의 입고·사용·반납·조정 기록입니다. (⚠️ 이력은 예시 데이터)">
-      {/* 요약 + 오른쪽 위 부품 입고 버튼 */}
+    <div className="p-4">
+      {/* 제목 + 오른쪽 위 뒤로가기 */}
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 border-b border-fixops-border pb-4">
+        <div className="flex items-start gap-3">
+          <PartImage part={part} />
+          <div>
+            <h2 className="text-[18px] font-bold">{part.sku} · {part.name}</h2>
+            <p className="mt-1 text-[12px] text-fixops-muted">이 부품의 입고·사용·반납·조정 기록입니다.</p>
+          </div>
+        </div>
+        <Button variant="secondary" className="min-h-9 px-4" onClick={onBack}>← 목록으로</Button>
+      </div>
+
+      {/* 요약 + 부품 입고 버튼 */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
           <span>현재 <b>{quantity}</b> / 안전 {part.safetyStock} {part.unit || ""}</span>
@@ -64,11 +80,9 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
           options={[{ value: "ALL", label: "전체" }, { value: "RECEIPT", label: "입고" }, { value: "USAGE", label: "사용" }, { value: "STOCK_RETURN", label: "반납" }, { value: "ADJUSTMENT", label: "조정" }]} />
       </div>
       {error && <Alert tone="error">{error}</Alert>}
-      <div className="max-h-[360px] overflow-y-auto">
-        {loading ? <p className="p-8 text-center text-fixops-muted" role="status">불러오는 중…</p>
-          : <Table columns={columns} rows={rows} rowKey={(m) => m.movementId} empty="변동 이력이 없습니다." />}
-      </div>
-    </Modal>
+      {loading ? <p className="p-8 text-center text-fixops-muted" role="status">불러오는 중…</p>
+        : <Table columns={columns} rows={rows} rowKey={(m) => m.movementId} empty="변동 이력이 없습니다." />}
+    </div>
   );
 }
 

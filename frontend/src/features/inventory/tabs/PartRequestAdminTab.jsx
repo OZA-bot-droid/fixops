@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Alert, Button, Card, Field, Modal } from "../../../components/ui";
 import { decidePartRequest, inventoryErrorMessage, listPartRequests } from "../inventoryApi";
-import { MockNotice, Pills, RequestBadge, Table, formatTime } from "../inventoryUi";
+import { Pills, RequestBadge, Table, formatTime } from "../inventoryUi";
+import { RequestImageThumbs } from "../inventoryImages";
 import useLoad from "./useLoad";
 
 /**
@@ -9,7 +10,7 @@ import useLoad from "./useLoad";
  *   TECHNICIAN 이 보낸 부품 요청을 승인·반려한다.
  *   승인은 "기록만" 한다. 재고는 바뀌지 않고, 실제 입고는 관리자가 따로 등록한다
  *   → 승인된 요청의 [입고 등록] 버튼이 "부품 등록·입고" 탭으로 부품·수량을 채워서 보낸다.
- *   ❌ API·테이블 설계 전 (새 기능) → 예시 데이터
+ *   ✅ GET /inventory/part-requests, POST /{id}/approve, POST /{id}/reject (D12)
  */
 export default function PartRequestAdminTab({ onNavigate }) {
   const [status, setStatus] = useState("REQUESTED");
@@ -43,7 +44,7 @@ export default function PartRequestAdminTab({ onNavigate }) {
       </div>
     ) },
     { key: "quantity", label: "수량" },
-    { key: "reason", label: "사유", render: (r) => r.reason || "—" },
+    { key: "reason", label: "사유", render: (r) => <div>{r.reason || "—"}<RequestImageThumbs request={r} /></div> },
     { key: "status", label: "상태", render: (r) => <div><RequestBadge status={r.status} />{r.rejectReason && <p className="mt-1 text-[11px] text-fixops-muted">{r.rejectReason}</p>}</div> },
     { key: "actions", label: "", className: "text-right", render: (r) => (
       <div className="flex justify-end gap-2">
@@ -63,7 +64,6 @@ export default function PartRequestAdminTab({ onNavigate }) {
 
   return (
     <>
-      <MockNotice apiMissing />
       {notice && <div className="mb-4"><Alert tone="success">{notice}</Alert></div>}
       {error && <div className="mb-4"><Alert tone="error">{error}</Alert></div>}
       <Card className="mb-5 flex flex-wrap items-center justify-between gap-3 p-5">

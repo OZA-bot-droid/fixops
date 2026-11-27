@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Alert, Card } from "../../../components/ui";
 import { listMovements } from "../inventoryApi";
-import { Delta, MockNotice, MovementBadge, Pills, Table, formatTime } from "../inventoryUi";
+import { Delta, MovementBadge, Pills, Table, formatTime } from "../inventoryUi";
 import useLoad from "./useLoad";
 
 /**
  * ADMIN · 재고 변동 이력 (Figma 27) = 원장(stock_movement) 조회
- *   ❌ GET /inventory/movements 없음 (승인 대기) → 예시 데이터
+ *   ✅ GET /inventory/movements (D12)
  */
 
 export default function StockHistoryTab() {
@@ -26,11 +26,10 @@ export default function StockHistoryTab() {
 
   return (
     <>
-      <MockNotice apiMissing />
       <Card className="mb-5 p-5">
         <div className="flex flex-wrap items-center gap-3">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="⌕ 부품명 검색"
-            className="h-10 min-w-[260px] flex-1 rounded-[9px] bg-fixops-background px-4 text-[13px] outline-none focus:ring-2 focus:ring-blue-100" />
+            className="h-10 w-full flex-1 rounded-[9px] sm:w-auto sm:min-w-[260px] bg-fixops-background px-4 text-[13px] outline-none focus:ring-2 focus:ring-blue-100" />
           <Pills value={type} onChange={setType}
             options={[{ value: "ALL", label: "전체" }, { value: "RECEIPT", label: "입고" }, { value: "USAGE", label: "사용" }, { value: "STOCK_RETURN", label: "반납" }, { value: "ADJUSTMENT", label: "조정" }]} />
         </div>

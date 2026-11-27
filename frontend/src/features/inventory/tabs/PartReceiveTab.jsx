@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Alert, Button, Card, Field } from "../../../components/ui";
 import { createPart, inventoryErrorMessage, listParts, newOperationKey, receiveStock } from "../inventoryApi";
-import { MockNotice } from "../inventoryUi";
+import { ImagePicker } from "../inventoryImages";
 import useLoad from "./useLoad";
 
 /**
  * ADMIN · 부품 등록·입고 (Figma 25)
  *   신규 부품: POST /inventory/parts → (입고 수량이 있으면) POST /inventory/receipts
  *   기존 부품: POST /inventory/receipts
+ *   부품 사진: 신규 등록할 때만 1장 (선택). 부품과 같은 요청(multipart)으로 저장한다
  * 멱등 키는 폼마다 하나. 실패 후 다시 저장하면 같은 키로 재시도, 성공하면 새 키.
  */
 export default function PartReceiveTab({ prefill }) {
@@ -16,7 +17,6 @@ export default function PartReceiveTab({ prefill }) {
   const [notice, setNotice] = useState("");
   return (
     <>
-      <MockNotice />
       {notice && <div className="mb-4"><Alert tone="success">{notice}</Alert></div>}
       <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
         <Card className="p-7">
@@ -53,6 +53,7 @@ function NewPartForm({ onDone, prefill }) {
     ? { ...empty, name: prefill.partName, sku: prefill.sku || "", category: prefill.category || "", unit: prefill.unit || "EA", safetyStock: prefill.safetyStock ?? 0, initialQuantity: prefill.quantity }
     : empty);
   const [keys, setKeys] = useState(() => ({ part: newOperationKey("part"), receipt: newOperationKey("receipt") }));
+  const [images, setImages] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -63,11 +64,12 @@ function NewPartForm({ onDone, prefill }) {
     if (!form.sku.trim() || !form.name.trim()) return setError("SKU와 부품명은 필수입니다.");
     setSaving(true);
     try {
-      const part = await createPart({ sku: form.sku.trim(), name: form.name.trim(), category: form.category || undefined, unit: form.unit || undefined, safetyStock: Number(form.safetyStock) || 0 }, keys.part);
+      const part = await createPart({ sku: form.sku.trim(), name: form.name.trim(), category: form.category || undefined, unit: form.unit || undefined, safetyStock: Number(form.safetyStock) || 0 }, keys.part, images[0]);
       const qty = Number(form.initialQuantity) || 0;
       if (qty > 0) await receiveStock({ partId: part.id, quantity: qty, note: "최초 입고" }, keys.receipt);
       onDone(`${part.sku} · ${part.name} 을(를) 등록했습니다${qty > 0 ? ` (입고 ${qty})` : ""}.`);
       setForm(empty);
+      setImages([]);
       setKeys({ part: newOperationKey("part"), receipt: newOperationKey("receipt") });
     } catch (err) {
       setError(inventoryErrorMessage(err));
@@ -87,6 +89,8 @@ function NewPartForm({ onDone, prefill }) {
         <Field label="안전 재고" type="number" min="0" value={form.safetyStock} onChange={set("safetyStock")} hint="이 수량보다 적으면 부족으로 표시" />
         <Field label="최초 입고 수량" type="number" min="0" value={form.initialQuantity} onChange={set("initialQuantity")} hint="0이면 등록만 합니다" />
       </div>
+      <ImagePicker files={images} onChange={setImages} onError={setError} disabled={saving}
+        label="부품 사진 (선택, 1장)" hint="부품 모양이나 라벨 사진을 붙이면 기술자가 찾기 쉽습니다." />
       <div className="flex justify-end"><Button type="submit" disabled={saving}>{saving ? "저장 중…" : "저장 및 계속"}</Button></div>
     </form>
   );
