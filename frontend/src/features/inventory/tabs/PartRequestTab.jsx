@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Alert, Button, Card, Field } from "../../../components/ui";
 import { createPartRequest, inventoryErrorMessage, listPartRequests, listParts } from "../inventoryApi";
-import { MockNotice, RequestBadge, Table, formatTime } from "../inventoryUi";
+import { RequestBadge, Table, formatTime } from "../inventoryUi";
+import { ImagePicker, RequestImageThumbs } from "../inventoryImages";
 import useLoad from "./useLoad";
 
 /**
@@ -11,7 +12,8 @@ import useLoad from "./useLoad";
  *   - 목록에 없는 새 부품: 부품명·SKU·분류·단위·안전 재고를 직접 입력한다 (관리자가 등록할 때 그대로 채워짐)
  *   등록된 부품을 고르면 SKU·분류·단위·안전 재고는 부품 정보로 자동 표시된다 (수정 불가)
  *   "부품 사용" 탭의 [요청] 버튼으로 오면 부품·수량이 미리 채워진다 (prefill).
- *   ❌ API·테이블 설계 전 (새 기능) → 예시 데이터로만 동작. 팀장님과 범위 확정 후 백엔드 추가
+ *   사진은 요청할 때만 1장 첨부한다 (보내기 전에 화면에서 줄임). 보낸 뒤에는 바꿀 수 없다.
+ *   ✅ POST·GET /inventory/part-requests (D12)
  */
 const NEW_PART = "__new__";
 
@@ -24,6 +26,7 @@ export default function PartRequestTab({ prefill }) {
     workOrderId: "",
     reason: "",
   });
+  const [images, setImages] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -42,13 +45,14 @@ export default function PartRequestTab({ prefill }) {
     if (isNew && list.some((p) => p.sku.toLowerCase() === form.sku.trim().toLowerCase())) return setError("이미 등록된 SKU 입니다. 목록에서 선택해 주세요.");
     setSaving(true);
     try {
-      const reason = [form.workOrderId && `WO-${form.workOrderId}`, form.reason].filter(Boolean).join(" · ");
       const info = isNew
         ? { sku: form.sku.trim(), category: form.category.trim() || undefined, unit: form.unit.trim() || undefined, safetyStock: Number(form.safetyStock) || 0 }
         : { sku: selected.sku, category: selected.category, unit: selected.unit, safetyStock: selected.safetyStock };
-      await createPartRequest({ partId: isNew ? null : selected.id, partName, ...info, quantity: Number(form.quantity), reason });
+      await createPartRequest({ partId: isNew ? null : selected.id, partName, ...info, quantity: Number(form.quantity),
+        workOrderId: form.workOrderId ? Number(form.workOrderId) : undefined, reason: form.reason || undefined, images });
       setNotice(`${partName} ${form.quantity}개를 요청했습니다.`);
       setForm({ partId: "", newPartName: "", sku: "", category: "", unit: "EA", safetyStock: 0, quantity: 1, workOrderId: "", reason: "" });
+      setImages([]);
     } catch (err) {
       setError(inventoryErrorMessage(err));
     } finally {
@@ -60,13 +64,12 @@ export default function PartRequestTab({ prefill }) {
     { key: "requestedAt", label: "요청 시각", render: (r) => formatTime(r.requestedAt) },
     { key: "partName", label: "부품", className: "font-semibold" },
     { key: "quantity", label: "수량" },
-    { key: "reason", label: "사유", render: (r) => r.reason || "—" },
+    { key: "reason", label: "사유", render: (r) => <div>{r.reason || "—"}<RequestImageThumbs request={r} /></div> },
     { key: "status", label: "상태", render: (r) => <div><RequestBadge status={r.status} />{r.rejectReason && <p className="mt-1 text-[11px] text-fixops-muted">{r.rejectReason}</p>}</div> },
   ];
 
   return (
     <>
-      <MockNotice apiMissing />
       {notice && <div className="mb-4"><Alert tone="success">{notice}</Alert></div>}
       <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
         <Card className="h-fit p-6">
@@ -104,6 +107,7 @@ export default function PartRequestTab({ prefill }) {
               <Field label="작업지시 번호 (선택)" type="number" min="1" placeholder="예: 1060" value={form.workOrderId} onChange={set("workOrderId")} />
             </div>
             <Field label="사유" as="textarea" placeholder="예: 교체용, 재고 없음" value={form.reason} onChange={set("reason")} />
+            <ImagePicker files={images} onChange={setImages} onError={setError} disabled={saving} />
             <Button type="submit" disabled={saving}>{saving ? "요청 중…" : "요청 보내기"}</Button>
           </form>
         </Card>

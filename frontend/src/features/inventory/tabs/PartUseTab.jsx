@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { Alert, Button, Card } from "../../../components/ui";
 import { listParts, listUsages } from "../inventoryApi";
-import { MockNotice, Pills, StatCard, StockBadge, Table, formatTime } from "../inventoryUi";
+import { Pills, StatCard, StockBadge, Table, formatTime } from "../inventoryUi";
 import UsePartModal from "./UsePartModal";
+import { PartImage } from "../inventoryImages";
 import useLoad from "./useLoad";
 
 /**
@@ -10,7 +11,7 @@ import useLoad from "./useLoad";
  *   부품 재고 조회 ✅ GET /inventory/parts (활성 부품만, 조회 전용)
  *   사용 등록     ✅ POST /inventory/usages  — 줄마다 [사용] 버튼, 또는 아래 "부품 사용 등록"
  *   부품 요청     → 재고가 없거나 부족하면 줄의 [요청] 버튼으로 "부품 요청" 탭에 부품을 채워서 이동
- *   내 사용 내역  ❌ 조회 API 없음 → 예시 데이터
+ *   사용 내역     ✅ GET /inventory/usages (D12)
  *   요약 카드 4개를 누르면 그 값에 해당하는 목록으로 조회된다
  *     사용 가능 부품 → 부품 표 "사용 가능" / 부족 부품 → 부품 표 "부족"
  *     오늘 사용 → 사용 내역 "오늘" / 최근 사용 → 사용 내역 "전체"
@@ -43,7 +44,9 @@ export default function PartUseTab({ onNavigate }) {
 
   const columns = [
     { key: "sku", label: "SKU", className: "font-semibold" },
-    { key: "name", label: "부품명" },
+    { key: "name", label: "부품명", render: (p) => (
+      <div className="flex items-center gap-2"><PartImage part={p} className="h-9 w-9" />{p.name}</div>
+    ) },
     { key: "quantity", label: "재고", render: (p) => <span><b>{p.quantity}</b> <span className="text-fixops-muted">{p.unit || ""}</span></span> },
     { key: "status", label: "상태", render: (p) => <StockBadge part={p} /> },
     { key: "actions", label: "", className: "text-right", render: (p) => (
@@ -65,9 +68,8 @@ export default function PartUseTab({ onNavigate }) {
 
   return (
     <>
-      <MockNotice />
       {notice && <div className="mb-4"><Alert tone="success">{notice}</Alert></div>}
-      <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">   {/* 모바일에서도 2개씩 (세로로 4개 쌓이면 너무 길다) */}
         <StatCard label="사용 가능 부품" value={`${all.filter((p) => p.quantity > 0).length}종`}
           onClick={() => pickParts("AVAILABLE")} active={filter === "AVAILABLE"} />
         <StatCard label="부족 부품" value={`${all.filter(isShort).length}종`} tone="text-fixops-warning"
@@ -83,7 +85,7 @@ export default function PartUseTab({ onNavigate }) {
           <h2 className="text-[18px] font-bold">작업별 부품 및 재고</h2>
           <div className="flex flex-wrap items-center gap-3">
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="⌕ SKU, 부품명 검색"
-              className="h-10 w-[220px] rounded-[9px] bg-fixops-background px-4 text-[13px] outline-none focus:ring-2 focus:ring-blue-100" />
+              className="h-10 w-full rounded-[9px] sm:w-[220px] bg-fixops-background px-4 text-[13px] outline-none focus:ring-2 focus:ring-blue-100" />
             <Pills value={filter} onChange={setFilter}
               options={[{ value: "ALL", label: "전체" }, { value: "AVAILABLE", label: "사용 가능" }, { value: "SHORT", label: "부족" }]} />
           </div>
@@ -96,7 +98,7 @@ export default function PartUseTab({ onNavigate }) {
 
       <Card className="mb-5 scroll-mt-6 p-6" ref={usagesRef}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[16px] font-bold">사용 내역 <span className="text-[12px] font-normal text-fixops-muted">(예시 데이터)</span></h2>
+          <h2 className="text-[16px] font-bold">사용 내역</h2>
           <Pills value={usageFilter} onChange={setUsageFilter}
             options={[{ value: "RECENT", label: "최근 5건" }, { value: "TODAY", label: "오늘" }, { value: "ALL", label: "전체" }]} />
         </div>
