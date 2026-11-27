@@ -1,15 +1,16 @@
-import { Alert } from "../../components/ui";
-import { INVENTORY_MOCK } from "./inventoryApi";
 
-/** 화면 안 탭 (하위 메뉴 대신 한 페이지에서 전환) */
+/**
+ * 화면 안 탭 (하위 메뉴 대신 한 페이지에서 전환)
+ * 좁은 화면에서는 다음 줄로 넘어간다 (가로 스크롤 없음). 탭 이름은 중간에 끊기지 않는다
+ */
 export function Tabs({ tabs, value, onChange }) {
   return (
-    <div role="tablist" aria-label="부품·재고 기능" className="mb-6 flex flex-wrap gap-2 border-b border-fixops-border">
+    <div role="tablist" aria-label="부품·재고 기능" className="mb-6 flex flex-wrap gap-x-1 border-b border-fixops-border sm:gap-x-2">
       {tabs.map((t) => {
         const active = t.key === value;
         return (
           <button key={t.key} type="button" role="tab" aria-selected={active} onClick={() => onChange(t.key)}
-            className={`-mb-px border-b-2 px-4 py-3 text-[14px] font-semibold transition-colors ${active ? "border-fixops-primary text-fixops-primary" : "border-transparent text-fixops-muted hover:text-fixops-text"}`}>
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-3 text-[13px] font-semibold transition-colors sm:px-4 sm:text-[14px] ${active ? "border-fixops-primary text-fixops-primary" : "border-transparent text-fixops-muted hover:text-fixops-text"}`}>
             {t.label}
           </button>
         );
@@ -32,11 +33,43 @@ export function Pills({ options, value, onChange }) {
   );
 }
 
-/** 표 (Figma 24 표 모양: 연한 머리줄 + 줄 구분선) */
+/**
+ * 표 (Figma 24 표 모양: 연한 머리줄 + 줄 구분선)
+ *
+ * 반응형: 같은 데이터를 화면 너비에 따라 두 가지로 보여 준다
+ *   md(768px) 이상 : 표
+ *   그보다 좁으면  : 카드 목록. 첫 번째 칸을 제목으로, 나머지는 "이름 : 값" 줄로, 버튼 칸(이름 없는 칸)은 맨 아래
+ *   표를 가로로 밀어서 보는 것보다 한 손으로 위아래로만 넘기면 되어서 모바일에서 읽기 쉽다
+ */
 export function Table({ columns, rows, rowKey, empty = "표시할 데이터가 없습니다." }) {
+  const cell = (c, r) => (c.render ? c.render(r) : r[c.key]);
+  const [first, ...rest] = columns;
+  const fields = rest.filter((c) => c.label);
+  const actions = rest.filter((c) => !c.label);
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] border-collapse text-left text-[13px]">
+    <>
+      {/* 모바일: 카드 목록 */}
+      <ul className="divide-y divide-fixops-border md:hidden">
+        {rows.length === 0 && <li className="px-2 py-10 text-center text-[13px] text-fixops-muted">{empty}</li>}
+        {rows.map((r) => (
+          <li key={rowKey(r)} className="grid gap-2 px-2 py-4 text-[13px]">
+            <div className="font-semibold">{cell(first, r)}</div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              {fields.map((c) => (
+                <div key={c.key} className="contents">
+                  <dt className="text-[12px] text-fixops-muted">{c.label}</dt>
+                  <dd className="min-w-0 break-words">{cell(c, r)}</dd>
+                </div>
+              ))}
+            </dl>
+            {actions.map((c) => <div key={c.key} className="pt-1">{cell(c, r)}</div>)}
+          </li>
+        ))}
+      </ul>
+
+      {/* 태블릿·PC: 표 */}
+      <div className="hidden overflow-x-auto md:block">
+      <table className="w-full border-collapse text-left text-[13px]">
         <thead>
           <tr className="bg-fixops-background text-[12px] text-fixops-muted">
             {columns.map((c) => <th key={c.key} className={`px-4 py-3 font-semibold ${c.className || ""}`}>{c.label}</th>)}
@@ -51,7 +84,8 @@ export function Table({ columns, rows, rowKey, empty = "표시할 데이터가 �
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -89,19 +123,6 @@ export function StatCard({ label, value, tone = "text-fixops-success", onClick, 
   );
 }
 
-/** ⚠️ 예시 데이터 안내 (가짜 데이터임을 화면에 항상 표시) */
-export function MockNotice({ apiMissing = false }) {
-  if (!INVENTORY_MOCK && !apiMissing) return null;
-  return (
-    <div className="mb-5">
-      <Alert tone="info">
-        ⚠️ 예시 데이터로 표시 중입니다.{" "}
-        {apiMissing ? "이 기능의 API는 아직 없습니다 (승인 후 연결)." : "백엔드 인증 연결 후 실제 데이터로 바뀝니다."}
-      </Alert>
-    </div>
-  );
-}
-
 /** 원장 구분 뱃지: 입고 / 사용 / 반납 / 조정 */
 const MOVEMENT_TYPES = {
   RECEIPT: ["입고", "bg-blue-50 text-fixops-primary"],
@@ -130,3 +151,30 @@ export function RequestBadge({ status }) {
 
 export const formatTime = (iso) =>
   iso ? new Date(iso).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+
+/**
+ * 쪽 번호 (쇼핑몰 검색 결과처럼 숫자로 나눠 보기)
+ *   ‹ 1 2 3 … 10 ›   번호는 10개씩 묶어서 보여 주고, ‹ › 는 이전·다음 쪽
+ *   page: 0부터 (서버의 page 와 같음). 화면에는 1부터 보인다
+ */
+export function Pagination({ page, size, total, onChange }) {
+  const last = Math.max(0, Math.ceil(total / size) - 1);
+  if (last === 0) return null;                       // 한 쪽뿐이면 숨김
+  const start = Math.floor(page / 10) * 10;          // 지금 묶음의 첫 쪽
+  const end = Math.min(last, start + 9);
+  const nums = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  const base = "grid h-9 min-w-9 place-items-center rounded-lg px-2 text-[13px] font-semibold";
+  const arrow = `${base} text-fixops-muted enabled:hover:bg-fixops-background disabled:opacity-30`;
+  return (
+    <nav aria-label="쪽 이동" className="mt-4 flex flex-wrap items-center justify-center gap-1">
+      <button type="button" className={arrow} disabled={page === 0} onClick={() => onChange(page - 1)} aria-label="이전 쪽">‹</button>
+      {start > 0 && <button type="button" className={`${base} text-fixops-muted hover:bg-fixops-background`} onClick={() => onChange(start - 1)} aria-label="이전 10쪽">…</button>}
+      {nums.map((n) => (
+        <button key={n} type="button" onClick={() => onChange(n)} aria-current={n === page ? "page" : undefined}
+          className={`${base} ${n === page ? "bg-fixops-primary text-white" : "text-fixops-text hover:bg-fixops-background"}`}>{n + 1}</button>
+      ))}
+      {end < last && <button type="button" className={`${base} text-fixops-muted hover:bg-fixops-background`} onClick={() => onChange(end + 1)} aria-label="다음 10쪽">…</button>}
+      <button type="button" className={arrow} disabled={page === last} onClick={() => onChange(page + 1)} aria-label="다음 쪽">›</button>
+    </nav>
+  );
+}

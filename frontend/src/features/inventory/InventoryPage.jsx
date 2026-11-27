@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PageHeader } from "../../components/layout/AppLayout";
 import { useOrganization } from "../member/OrganizationProvider";
 import { Tabs } from "./inventoryUi";
+import { setInventoryScope } from "./inventoryApi";
 import PartListTab from "./tabs/PartListTab";
 import PartReceiveTab from "./tabs/PartReceiveTab";
 import UsageByWorkOrderTab from "./tabs/UsageByWorkOrderTab";
@@ -33,7 +34,9 @@ const TABS = {
 };
 
 export default function InventoryPage() {
-  const { activeRole } = useOrganization();
+  const { activeRole, activeOrganizationId, activeOrganizationKind, activeComplexId } = useOrganization();
+  // 모든 API 요청에 붙일 조직·단지 (BUILDING 일 때만 단지). 화면을 그리기 전에 정해 둔다
+  setInventoryScope({ organizationId: activeOrganizationId, complexId: activeOrganizationKind === "BUILDING" ? activeComplexId : null });
   const tabs = TABS[activeRole] || [];
   const [tab, setTab] = useState(tabs[0]?.key);
   const [prefill, setPrefill] = useState(null);   // 다른 탭으로 넘길 값 (예: 요청할 부품)

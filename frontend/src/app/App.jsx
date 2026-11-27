@@ -122,11 +122,11 @@ export default function App() {
               <Route path="/audit" element={<UnavailablePage title="권한 변경 감사 로그" />} />
             </Route>
             <Route element={<RoleGuard roles={["ADMIN", "TECHNICIAN"]} />}>
-              <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/ai" element={<ComingSoon name="AI 점검센터" />} />
             </Route>
             <Route element={<RoleGuard roles={["ADMIN", "TECHNICIAN"]} requireComplex />}>
               <Route path="/asset" element={<LocationManagementPage />} />
+              <Route path="/inventory" element={<InventoryPage />} />
             </Route>
             <Route element={<RoleGuard roles={["ADMIN", "TECHNICIAN", "USER"]} requireComplex />}>
               <Route path="/workorder" element={<ComingSoon name="작업 관리" />} />
