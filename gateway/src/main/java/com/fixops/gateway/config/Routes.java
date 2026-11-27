@@ -15,8 +15,8 @@ public class Routes {
                                @Value("${fixops.upstream.inventory}") String inventory,
                                @Value("${fixops.upstream.ai}") String ai) {
         return builder.routes()
-                .route("member", r -> r.path("/api/members/**", "/api/organizations/**", "/api/platform/**", "/api/complexes/**", "/api/resident-enrollments/**").filters(f -> f.stripPrefix(1)).uri(member))
-                .route("asset", r -> r.path("/api/assets/**", "/api/locations/**").filters(f -> f.stripPrefix(1)).uri(asset))
+                .route("member", r -> r.path("/api/members/**", "/api/organizations", "/api/organizations/**", "/api/invitations/**", "/api/platform/**", "/api/complexes/**", "/api/resident-enrollments", "/api/resident-enrollments/**").filters(f -> f.stripPrefix(1)).uri(member))
+                .route("asset", r -> r.path("/api/assets", "/api/assets/**", "/api/locations", "/api/locations/**").uri(asset))
                 .route("workorder", r -> r.path("/api/work-orders/**", "/api/schedules/**").filters(f -> f.stripPrefix(1)).uri(workorder))
                 .route("inventory", r -> r.path("/api/inventory/**").filters(f -> f.stripPrefix(1)).uri(inventory))
                 .route("ai", r -> r.path("/api/ai/**").filters(f -> f.stripPrefix(1)).uri(ai))
