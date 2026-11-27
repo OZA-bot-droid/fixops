@@ -136,6 +136,63 @@ erDiagram
 - `roster_entry`의 중복 판별은 **동/호수만으로 유일하지 않음**. 명부 소유 주민별 안정적인 key가 없는 경우 관리자 확인 및 연락처 HMAC 등을 보조로 활용.
 - 물리 DB 스키마/DDL은 담당자별 Flyway V1/V2에서 확정, 여기에 없는 자동 FK 가정 금지.
 
+### 2.1 주민 등록 인증 — V9 물리 스키마 추가
+
+Member DB 소유. 기존 논리 ERD와 함께 아래 부분 ERD를 적용한다. 기준: `V9__resident_registration_codes.sql`, 2026-11-25 구현 브랜치.
+
+```mermaid
+erDiagram
+ ROSTER_ENTRY ||--o{ RESIDENT_REGISTRATION_CODE : issued_for
+ ORGANIZATION ||--o{ RESIDENT_REGISTRATION_CODE : owns
+ APARTMENT_COMPLEX ||--o{ RESIDENT_REGISTRATION_CODE : scopes
+ MEMBER ||--o{ RESIDENT_REGISTRATION_CODE : issues
+ MEMBER o|--o{ RESIDENT_REGISTRATION_CODE : consumes
+ MEMBER ||--o| RESIDENT_REGISTRATION_ATTEMPT : limits
+ MEMBER ||--o{ RESIDENT_ENROLLMENT : applies
+ RESIDENT_ROSTER ||--o{ RESIDENT_ENROLLMENT : matches
+ RESIDENT_REGISTRATION_CODE o|--o| RESIDENT_ENROLLMENT : proves
+ VERIFICATION_CHALLENGE o|--o| RESIDENT_ENROLLMENT : proves_sms
+ RESIDENT_REGISTRATION_CODE {
+   bigint id PK
+   bigint roster_entry_id FK
+   bigint organization_id FK
+   bigint complex_id FK
+   varchar code_hash UK
+   bigint issued_by FK
+   timestamptz issued_at
+   timestamptz expires_at
+   bigint consumed_by FK
+   timestamptz consumed_at
+   timestamptz revoked_at
+ }
+ RESIDENT_REGISTRATION_ATTEMPT {
+   bigint member_id PK,FK
+   timestamptz window_started_at
+   int attempts
+ }
+ RESIDENT_ENROLLMENT {
+   bigint id PK
+   bigint member_id FK
+   bigint roster_id FK
+   uuid challenge_id FK,UK
+   varchar verification_method
+   bigint registration_code_id FK,UK
+   varchar status
+   timestamptz verified_at
+ }
+```
+
+물리 테이블명: `resident_registration_codes`, `resident_registration_attempts`, `resident_enrollments`. 위 신청 엔티티는 인증 관련 컬럼 중심으로 표시한다.
+
+- 코드 해시 VARCHAR(64) UNIQUE, 원문 저장 금지. 발급자·사용자·조직·단지는 Member 내부 FK.
+- 만료는 발급 이후, 사용 시각과 사용자는 동시에 존재하거나 동시에 NULL, 사용 완료와 회수는 상호 배타적이다.
+- 명부 항목별 미사용·미회수 코드 최대 1개(partial UNIQUE). 만료 여부는 이 인덱스 조건에 포함되지 않으므로 재발급 시 기존 미사용 코드를 회수한다.
+- 신청의 challenge_id는 nullable로 변경, verification_method VARCHAR(24) NOT NULL DEFAULT 'SMS_OTP', registration_code_id는 nullable UNIQUE FK.
+- SMS_OTP는 challenge_id 필수, registration_code_id NULL. REGISTRATION_CODE는 challenge_id NULL, registration_code_id 및 verified_at 필수, 상태는 PENDING_REVIEW/APPROVED/REJECTED 중 하나.
+- 시도 제한은 회원별 PK, 15분 윈도우, attempts 0~5 CHECK. 코드 발급·사용·회수·명부 퇴거는 조직/단지 잠금 기반으로 직렬화한다. 인증 방식 간 중복 심사 제한은 서비스 로직이며 별도 DB UNIQUE 제약으로 보장하지 않는다.
+- 퇴거 시 미사용 코드 회수 및 진행 중 신청 반려. 사용 완료 코드는 이력으로 보존. 감사 로그 대상은 resident_registration_code 및 resident_enrollment로 분리한다.
+- 실제 물리 스키마는 Flyway V1~V9를 우선하며, 기존 V1~V8 변경 없이 V9를 순차 적용한다. 실제 DB 마이그레이션 및 동시성 검증 필요.
+
 ## 3. Asset DB
 
 ```mermaid
@@ -298,3 +355,7 @@ erDiagram
 - Member/Asset/WorkOrder/Inventory 각각 Flyway. 한 RDS Postgres 16 인스턴스 내 논리 DB 개별 관리.
 - AI DB는 Alembic. `vector` 확장 설치는 프로비저닝 단계에서 단 한 곳이 담당.
 - 기존 vector 0.8.7의 다운그레이드를 `ALTER EXTENSION UPDATE`로 처리하지 말 것. 신규 DB 생성+재색인 경로를 사용.
+
+
+### Member DB: organization_onboarding_invitations (V12)
+플랫폼 조직 개설 초대 전용. 기존 invitations(구성원 초대)와 분리. PK id, invitee_email, organization_name, organization_kind, created_by(FK members), created_at, expires_at, accepted_at, accepted_by(FK members), revoked_at, organization_id(UNIQUE FK organizations). 수락 전 동일 이메일/조직명/유형 중복 방지 부분 유니크 인덱스. 수락 시 인증 이메일 일치 및 행 잠금으로 일회성 보장.
