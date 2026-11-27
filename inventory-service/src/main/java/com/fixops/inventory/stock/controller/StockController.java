@@ -9,12 +9,15 @@ import com.fixops.inventory.stock.dto.UsageRequest;
 import com.fixops.inventory.stock.dto.UsageResult;
 import com.fixops.inventory.stock.service.StockService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Gateway 가 /api 를 떼고 넘기므로 이 서비스에는 /inventory/... 로 도착한다.
  */
 @RestController
+@Validated   // @RequestParam 의 @Positive 검증을 동작시킨다
 @RequestMapping("/inventory")
 public class StockController {
 
@@ -42,13 +46,13 @@ public class StockController {
      */
     @PostMapping("/receipts")
     public ResponseEntity<ApiResponse<StockChangeResult>> receive(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,   // 로그인 JWT (Gateway 가 확인한 것)
+            @RequestParam(required = false) @Positive Long organizationId,                   // 어느 조직에서 일하는지 (Member 가 확인)
+            @RequestParam(required = false) @Positive Long complexId,                        // BUILDING 이면 단지 (권한 확인에만 사용)
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody ReceiptRequest request) {
 
-        CurrentMember member = authorization.requireAdmin(memberId, role, organizationId);
+        CurrentMember member = authorization.requireAdmin(bearerToken, organizationId, complexId);
 
         if (!idempotencyKey.equals(request.operationKey())) {
             throw new IllegalArgumentException("Idempotency-Key 와 operationKey 가 다릅니다.");
@@ -69,15 +73,13 @@ public class StockController {
      */
     @PostMapping("/usages")
     public ResponseEntity<ApiResponse<UsageResult>> use(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
-            @RequestHeader(value = "Authorization", required = false) String bearerToken, // D11: WorkOrder 로 전달할 사용자 JWT
-            // (이름을 authorization 으로 하면 위의 권한 확인 필드 authorization 을 가려서 컴파일 오류가 난다)
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,   // 로그인 JWT (Gateway 가 확인한 것)
+            @RequestParam(required = false) @Positive Long organizationId,                   // 어느 조직에서 일하는지 (Member 가 확인)
+            @RequestParam(required = false) @Positive Long complexId,                        // BUILDING 이면 단지 (권한 확인에만 사용)
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody UsageRequest request) {
 
-        CurrentMember member = authorization.requireUsage(memberId, role, organizationId);
+        CurrentMember member = authorization.requireUsage(bearerToken, organizationId, complexId);
 
         if (!idempotencyKey.equals(request.operationKey())) {
             throw new IllegalArgumentException("Idempotency-Key 와 operationKey 가 다릅니다.");
