@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "FixOps Inventory (부품 CRUD)",
-    "description": "inventory-service(8084)에 직접 요청. Gateway 가 아직 X-* 헤더를 넣어 주지 않아서 헤더를 직접 보낸다.\n위에서부터 순서대로 실행. '01 등록 성공'을 먼저 실행해야 partId 가 생긴다.\n요청 이름의 → 뒤가 기대 결과.",
+    "name": "FixOps Inventory",
+    "description": "inventory-service(8084)에 직접 요청. Gateway 는 X-* 신원 헤더를 지우므로(StripIdentityHeaders), 지금은 8084 로 헤더를 직접 보낸다.\n위에서부터 순서대로 실행. '01 등록 성공'을 먼저 실행해야 partId 가 생긴다.\n요청 이름의 → 뒤가 기대 결과.\n0~5: 가짜 WorkOrder(WORKORDER_FAKE=true)로 실행. 6: 가짜를 끄고 실행 (D11 실제 WorkOrder 연결 확인).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -31,6 +31,22 @@
     },
     {
       "key": "usageKey",
+      "value": ""
+    },
+    {
+      "key": "d11Key",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "inProgressWorkOrderId",
+      "value": ""
+    },
+    {
+      "key": "assignedWorkOrderId",
       "value": ""
     }
   ],
@@ -2399,6 +2415,332 @@
             },
             "description": "입고 50 - 51(2) - 55(2) = 46 이어야 한다. 52 재시도와 실패한 요청으로는 줄지 않는다."
           }
+        }
+      ]
+    },
+    {
+      "name": "6. 실제 WorkOrder 연결 (POST /usages) — 가짜 끄고 실행 (D11)",
+      "description": "D11. 서버를 가짜 없이 실행한다:  python scripts/dev.py run inventory  (WORKORDER_FAKE 를 설정하지 않음)\nPowerShell 창에 예전 값이 남아 있으면 먼저:  Remove-Item Env:WORKORDER_FAKE\n먼저 1번 '01 등록 성공', 4번 '41 입고 성공'을 실행해 재고가 있어야 한다.\n66: WorkOrder 서버(8083)를 끈 상태에서 실행.\n67~70: WorkOrder 가 develop 에 병합된 뒤, WorkOrder 를 켜고 실제 작업지시 번호를 변수에 넣고 실행.",
+      "item": [
+        {
+          "name": "66 WorkOrder 꺼짐 → 503 DEPENDENCY_UNAVAILABLE",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{d11Key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 811,\n  \"partId\": {{partId}},\n  \"quantity\": 1,\n  \"operationKey\": \"{{d11Key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "WorkOrder(8083)가 꺼져 있으면 연결 실패 → 503. 재고는 줄지 않아야 한다 (65 목록으로 수량 확인)."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 멱등 키 (D11 확인용)",
+                  "pm.collectionVariables.set('d11Key', 'usage-d11-' + Date.now());"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "67 진행 중 작업, 배정된 기사 → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "description": "로그인해서 받은 JWT. 없으면 이 줄을 꺼도 된다 (지금 WorkOrder 는 X-Member-Id 로 확인)"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{d11Key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": {{inProgressWorkOrderId}},\n  \"partId\": {{partId}},\n  \"quantity\": 1,\n  \"operationKey\": \"{{d11Key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "변수 inProgressWorkOrderId = 상태가 IN_PROGRESS 이고 memberId 가 배정된 작업지시. 헤더 X-User-Role 을 TECHNICIAN 으로 바꿔도 201."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 멱등 키 (D11 확인용)",
+                  "pm.collectionVariables.set('d11Key', 'usage-d11-' + Date.now());"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "68 배정·접수 상태 작업 → 409 WORK_ORDER_NOT_IN_PROGRESS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "description": "로그인해서 받은 JWT. 없으면 이 줄을 꺼도 된다 (지금 WorkOrder 는 X-Member-Id 로 확인)"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{d11Key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": {{assignedWorkOrderId}},\n  \"partId\": {{partId}},\n  \"quantity\": 1,\n  \"operationKey\": \"{{d11Key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "변수 assignedWorkOrderId = 상태가 ASSIGNED(아직 작업 시작 전)인 작업지시."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 멱등 키 (D11 확인용)",
+                  "pm.collectionVariables.set('d11Key', 'usage-d11-' + Date.now());"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "69 없는 작업지시 → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "description": "로그인해서 받은 JWT. 없으면 이 줄을 꺼도 된다 (지금 WorkOrder 는 X-Member-Id 로 확인)"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{d11Key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": 999999,\n  \"partId\": {{partId}},\n  \"quantity\": 1,\n  \"operationKey\": \"{{d11Key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "WorkOrder 가 404 → Inventory 도 404 RESOURCE_NOT_FOUND."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 멱등 키 (D11 확인용)",
+                  "pm.collectionVariables.set('d11Key', 'usage-d11-' + Date.now());"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "70 다른 기사가 사용 → 403 ORG_ACCESS_DENIED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Member-Id",
+                "value": "999"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "TECHNICIAN"
+              },
+              {
+                "key": "X-Org-Id",
+                "value": "{{orgId}}"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}",
+                "description": "로그인해서 받은 JWT. 없으면 이 줄을 꺼도 된다 (지금 WorkOrder 는 X-Member-Id 로 확인)"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{d11Key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/usages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "usages"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": {{inProgressWorkOrderId}},\n  \"partId\": {{partId}},\n  \"quantity\": 1,\n  \"operationKey\": \"{{d11Key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "X-User-Role=TECHNICIAN, X-Member-Id=배정되지 않은 기사 번호(999). 배정 기사가 아니므로 403."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// 매번 새 멱등 키 (D11 확인용)",
+                  "pm.collectionVariables.set('d11Key', 'usage-d11-' + Date.now());"
+                ]
+              }
+            }
+          ]
         }
       ]
     }
