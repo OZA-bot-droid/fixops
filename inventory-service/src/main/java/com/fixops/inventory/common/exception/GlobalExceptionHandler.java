@@ -5,6 +5,8 @@ import com.fixops.inventory.common.exception.auth.UnauthenticatedException;
 import com.fixops.inventory.part.exception.DuplicateSkuException;
 import com.fixops.inventory.part.exception.PartInactiveException;
 import com.fixops.inventory.part.exception.PartNotFoundException;
+import com.fixops.inventory.request.exception.PartRequestAlreadyDecidedException;
+import com.fixops.inventory.request.exception.PartRequestNotFoundException;
 import com.fixops.inventory.stock.exception.IdempotencyKeyReuseException;
 import com.fixops.inventory.stock.exception.InsufficientStockException;
 import com.fixops.inventory.stock.exception.StockNotFoundException;
@@ -22,6 +24,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -64,7 +69,8 @@ public class GlobalExceptionHandler {
     }
 
     // 404: 부품 없음, 재고 행 없음, 작업 없음 (예외 여러 개를 한 메서드에서 처리)
-    @ExceptionHandler({PartNotFoundException.class, StockNotFoundException.class, WorkOrderNotFoundException.class})
+    @ExceptionHandler({PartNotFoundException.class, StockNotFoundException.class, WorkOrderNotFoundException.class,
+            PartRequestNotFoundException.class})
     public ResponseEntity<ErrorResponse> handleNotFound(RuntimeException e) {
         return respond(ErrorCode.RESOURCE_NOT_FOUND, null, e);
     }
@@ -99,6 +105,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(PartInactiveException.class)
     public ResponseEntity<ErrorResponse> handlePartInactive(PartInactiveException e) {
         return respond(ErrorCode.PART_INACTIVE, null, e);
+    }
+
+    // 409: 이미 승인·반려된 부품 요청을 다시 처리
+    @ExceptionHandler(PartRequestAlreadyDecidedException.class)
+    public ResponseEntity<ErrorResponse> handleAlreadyDecided(PartRequestAlreadyDecidedException e) {
+        return respond(ErrorCode.INVALID_STATE_TRANSITION, null, e);
     }
 
     // 409: 진행 중이 아닌 작업에 부품 사용 (D8)
@@ -143,9 +155,21 @@ public class GlobalExceptionHandler {
      *   - IllegalArgumentException            : Service 의 입력 검사, 정렬 이름 오류 (우리 코드가 던짐)
      */
     @ExceptionHandler({MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class,
+            MaxUploadSizeExceededException.class,
+            MissingServletRequestPartException.class,
             HttpMessageNotReadableException.class,
             IllegalArgumentException.class})
     public ResponseEntity<ErrorResponse> handleBadInput(Exception e) {
+        // 우리 코드가 던진 IllegalArgumentException 은 화면에 그대로 보여 줄 수 있는 문장이라 그대로 돌려준다
+        // (예: "JPEG, PNG, WEBP 사진만 첨부할 수 있습니다.")
+        if (e instanceof IllegalArgumentException && e.getMessage() != null) {
+            return respond(ErrorCode.INVALID_INPUT.status(), ErrorCode.INVALID_INPUT.name(), e.getMessage(), null, e);
+        }
+        if (e instanceof MaxUploadSizeExceededException) {
+            return respond(ErrorCode.INVALID_INPUT.status(), ErrorCode.INVALID_INPUT.name(),
+                    "사진은 한 장에 5MB 이하여야 합니다.", null, e);
+        }
         return respond(ErrorCode.INVALID_INPUT, null, e);
     }
 

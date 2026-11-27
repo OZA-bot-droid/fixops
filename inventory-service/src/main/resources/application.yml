@@ -10,6 +10,10 @@ spring:
     url: ${DB_URL:jdbc:postgresql://127.0.0.1:5432/inventory_db}
     username: ${DB_USER:inventory_app}
     password: ${DB_PASSWORD:}   # 비밀번호는 파일에 적지 않고 .env 의 값을 환경 변수로 받는다
+  servlet:
+    multipart:
+      max-file-size: 5MB        # 부품 요청 사진 한 장 (DB 의 CHECK 제약과 같은 값)
+      max-request-size: 6MB     # 사진 1장 + 본문
   jpa:
     open-in-view: false       # 화면 응답을 만드는 동안 DB 연결을 붙잡아 두지 않는다 (트랜잭션은 Service 안에서만)
     hibernate:
@@ -20,6 +24,11 @@ spring:
     baseline-on-migrate: false  # 기록 없는 기존 DB 를 "이미 적용됨"으로 치지 않는다 (잘못된 테이블을 숨기지 않기 위해)
     locations: classpath:db/migration
 fixops:
+  # 권한 확인 (D13): 요청마다 Member 에 "이 사람이 이 조직의 ADMIN/TECHNICIAN 인가"를 묻는다 (Asset 과 같은 방식)
+  member:
+    url: ${MEMBER_SERVICE_URL:http://127.0.0.1:8081}       # dev.py 가 넘겨줌. Docker 에서는 http://member:8081
+  internal:
+    inventory-authz-key: ${INVENTORY_AUTHZ_KEY:}            # .env 의 값. Member 가 "Inventory 가 보낸 요청"인지 확인하는 열쇠
   workorder:
     # 실제 WorkOrder 호출 설정 (D11, HttpWorkOrderClient)
     #   직접 호출   : url=http://127.0.0.1:8083 (Docker 안에서는 http://workorder:8083), base-path=/work-orders
