@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "../../components/layout/AppLayout";
-import { sendChatMessage } from "./chatApi";
-
-const suggestions = [
-  "급수 펌프 이상 진단",
-  "모터 정기 점검 절차",
-  "방문 예약 가능 시간",
-  "부품 재고 조회",
-];
+import { useAuth } from "../member/AuthProvider";
+import { sendRagQuery, sendChatMessage } from "./chatApi";
+import RagSources from "./RagSources";
+import {
+  createConversation,
+  fetchConversations,
+  fetchConversationDetail,
+  sendConversationMessage,
+  deleteConversation
+} from "./conversationApi"
+import { Button } from "../../components/ui/index";
+import { useOrganization } from "../member/OrganizationProvider"
+import DocumentManagementModal from "./DocumentManagementModal";
 
 const welcomeMessage = {
   id: "welcome",
@@ -15,14 +20,6 @@ const welcomeMessage = {
   content:
     "안녕하세요! 어떤 설비 점검이 필요하신가요?\n설비 상태, 수리 이력, 예약 일정을 확인할 수 있어요.",
 };
-
-function createConversation(id) {
-  return {
-    id,
-    title: "새 대화",
-    messages: [welcomeMessage],
-  };
-}
 
 function getErrorMessage(error) {
   if (error.response?.status === 401) {
@@ -53,22 +50,35 @@ function getErrorMessage(error) {
 }
 
 export default function AIChatPage() {
-  const nextId = useRef(1);
+
+  const { user } = useAuth();
+  const {
+    activeOrganizationId,   // Header에서 선택한 조직 ID
+    activeComplexId,        // 선택한 단지 ID. 없으면 null
+    activeOrganizationKind, // FACTORY 또는 BUILDING
+    activeRole,             // 현재 조직에서의 사용자 역할
+  } = useOrganization();
+
+  const organizationId = activeOrganizationId;
+  const complexId = activeComplexId;
+
+  const [documentModalOpen, setDocumentModalOpen] = useState(false);
+
+  const [conversations, setConversations] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+
   const messagesRef = useRef(null);
 
-  const [conversations, setConversations] = useState([
-    createConversation("chat-0"),
-  ]);
-  const [activeId, setActiveId] = useState("chat-0");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
   const activeConversation = conversations.find(
-    (conversation) => conversation.id === activeId,
+    (conversation) => conversation.id === activeId
   );
-
-  const messages = activeConversation?.messages ?? [];
 
   useEffect(() => {
     const container = messagesRef.current;
@@ -77,6 +87,90 @@ export default function AIChatPage() {
 
     container.scrollTop = container.scrollHeight;
   }, [messages.length, sending, activeId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      setLoadingHistory(true);
+      setConversations([]);
+      setActiveId(null);
+      setMessages([]);
+
+      try {
+        const data = await fetchConversations(
+          Number(organizationId)
+        );
+
+        if (cancelled) return;
+
+        setConversations(data);
+        setActiveId(data[0]?.id ?? null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err.response?.data?.detail ??
+            "대화 목록을 불러오지 못했습니다."
+          );
+        }
+      } finally {
+        if (!cancelled) setLoadingHistory(false);
+      }
+    }
+
+    if (Number(organizationId) > 0) {
+      loadHistory();
+    } else {
+      setConversations([]);
+      setActiveId(null);
+      setMessages([]);
+      setLoadingHistory(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMessages() {
+      setLoadingMessages(true);
+      setMessages([]);
+
+      try {
+        const detail = await fetchConversationDetail({
+          organizationId: Number(organizationId),
+          conversationId: activeId,
+        });
+
+        if (!cancelled) {
+          setMessages(detail.messages ?? []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err.response?.data?.detail ??
+            "대화 메시지를 불러오지 못했습니다."
+          );
+        }
+      } finally {
+        if (!cancelled) setLoadingMessages(false);
+      }
+    }
+
+    if (activeId) {
+      loadMessages();
+    } else {
+      setMessages([]);
+      setLoadingMessages(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, organizationId]);
 
   function addMessage(conversationId, item, title) {
     setConversations((previous) =>
@@ -92,15 +186,79 @@ export default function AIChatPage() {
     );
   }
 
-  function startNewChat() {
+  async function startNewChat() {
+    if (sending || loadingHistory) return;
+
+    const orgId = organizationId == null ? null : Number(organizationId)
+    const selectedComplexId = complexId === null ? null : Number(complexId);
+
+    if (!Number.isSafeInteger(orgId) || orgId <= 0) {
+      setError("유효한 조직 ID가 필요합니다.");
+      return;
+    }
+
+    if (
+      selectedComplexId !== null
+      && (
+        !Number.isSafeInteger(selectedComplexId)
+        || selectedComplexId <= 0
+      )
+    ) {
+      setError("유효한 단지 ID가 필요합니다.");
+      return;
+    }
+
+    setError("");
+
+    try {
+      const created = await createConversation({
+        organizationId: orgId,
+        complexId: selectedComplexId,
+      });
+
+      setConversations((previous) => [
+        created,
+        ...previous,
+      ]);
+
+      setActiveId(created.id);
+      setMessages([]);
+      setMessage("");
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ??
+        "새 대화를 생성하지 못했습니다."
+      );
+    }
+  }
+
+  async function handleDeleteConversation(conversationId) {
     if (sending) return;
 
-    const id = `chat-${nextId.current++}`;
-
-    setConversations((previous) => [createConversation(id), ...previous]);
-    setActiveId(id);
-    setMessage("");
     setError("");
+
+    try {
+      await deleteConversation({
+        organizationId: Number(organizationId),
+        conversationId,
+      });
+
+      const remaining = conversations.filter(
+        (conversation) => conversation.id !== conversationId
+      );
+
+      setConversations(remaining);
+
+      if (activeId === conversationId) {
+        setActiveId(remaining[0]?.id ?? null);
+        setMessages([]);
+      }
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ??
+        "대화를 삭제하지 못했습니다."
+      );
+    }
   }
 
   async function handleSubmit(event) {
@@ -108,35 +266,81 @@ export default function AIChatPage() {
 
     const text = message.trim();
 
-    if (!text || sending || !activeConversation) return;
+    if (
+      !text ||
+      sending ||
+      loadingHistory ||
+      loadingMessages
+    ) {
+      return;
+    }
 
-    const conversationId = activeId;
-    const firstMessage = messages.length === 1;
+    if (!activeId || !activeConversation) {
+      setError("먼저 새 대화를 생성해 주세요.");
+      return;
+    }
+
+    const orgId = Number(organizationId);
+
+    if (!Number.isSafeInteger(orgId) || orgId <= 0) {
+      setError("유효한 조직 ID가 필요합니다.");
+      return;
+    }
 
     setSending(true);
     setError("");
     setMessage("");
 
-    addMessage(
-      conversationId,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: text,
-      },
-      firstMessage ? text.slice(0, 24) : undefined,
-    );
-
     try {
-      const answer = await sendChatMessage(text);
+      const result = await sendConversationMessage({
+        organizationId: orgId,
+        conversationId: activeId,
+        message: text,
+      });
 
-      addMessage(conversationId, {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: answer,
+      // Backend에서 반환한 실제 저장 메시지 사용
+      setMessages((previous) => [
+        ...previous,
+        result.user_message,
+        result.assistant_message,
+      ]);
+
+      // 첫 메시지가 입력되면 제목 갱신
+      setConversations((previous) => {
+        const updated = previous.map((conversation) => {
+          if (conversation.id !== activeId) {
+            return conversation;
+          }
+
+          return {
+            ...conversation,
+            title:
+              conversation.title === "새 대화"
+                ? text.slice(0, 200)
+                : conversation.title,
+            updated_at: new Date().toISOString(),
+          };
+        });
+
+        return updated.sort(
+          (a, b) =>
+            new Date(b.updated_at) -
+            new Date(a.updated_at)
+        );
       });
     } catch (requestError) {
-      setError(getErrorMessage(requestError));
+      console.error(
+        "History 메시지 전송 오류:",
+        requestError.response?.data ?? requestError
+      );
+
+      // 실패한 질문은 입력창에 보존
+      setMessage(text);
+
+      setError(
+        requestError.response?.data?.detail ??
+        "메시지 전송에 실패했습니다."
+      );
     } finally {
       setSending(false);
     }
@@ -160,7 +364,7 @@ export default function AIChatPage() {
         description="설비 매뉴얼과 과거 점검 이력을 기반으로 AI가 답합니다."
       />
 
-      <div className="grid h-[calc(100dvh-220px)] min-h-[440px] max-h-[679px] gap-5 lg:grid-cols-[285px_minmax(0,1fr)]">
+      <div className="grid h-[calc(100dvh-220px)] min-h-[440px] max-h-[600px] gap-5 lg:grid-cols-[285px_minmax(0,1fr)]">
         {/* 대화 목록 */}
         <aside className="flex h-full min-h-0 flex-col overflow-y-auto rounded-[14px] border border-fixops-border bg-white p-[14px]">
           <div className="flex items-center justify-between gap-2 px-2 py-3">
@@ -169,7 +373,7 @@ export default function AIChatPage() {
             <button
               type="button"
               onClick={startNewChat}
-              disabled={sending}
+              disabled={sending || loadingHistory}
               className="rounded-lg bg-fixops-primary px-3 py-2 text-xs font-semibold text-white hover:bg-fixops-primary-hover"
             >
               + 새 대화
@@ -177,36 +381,72 @@ export default function AIChatPage() {
           </div>
 
           <div className="mt-3 flex flex-col gap-3">
-            {conversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                type="button"
-                disabled={sending}
-                onClick={() => {
-                  setActiveId(conversation.id);
-                  setError("");
-                }}
-                aria-current={conversation.id === activeId ? "true" : undefined}
-                className={`min-h-[66px] rounded-[9px] px-4 text-left text-[13px] font-semibold transition-colors ${
-                  conversation.id === activeId
-                    ? "bg-[#eaf1ff] text-fixops-text"
-                    : "bg-fixops-background text-fixops-text hover:bg-[#eaf1ff]"
-                }`}
-              >
-                <span className="block truncate">{conversation.title}</span>
-              </button>
-            ))}
+            {loadingHistory && (
+              <p className="text-sm text-fixops-muted">
+                대화 목록을 불러오는 중...
+              </p>
+            )}
+
+            {!loadingHistory && conversations.length === 0 && (
+              <p className="text-sm text-fixops-muted">
+                저장된 대화가 없습니다. 새 대화를 생성해 주세요.
+              </p>
+            )}
+
+            {!loadingHistory &&
+              conversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className={`flex items-center gap-2 rounded-lg p-2 ${
+                    conversation.id === activeId
+                      ? "bg-[#eaf1ff]"
+                      : "bg-fixops-background"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    disabled={sending || loadingMessages}
+                    onClick={() => {
+                      setActiveId(conversation.id);
+                      setError("");
+                    }}
+                    className="min-w-0 flex-1 truncate text-left text-sm"
+                  >
+                    {conversation.title}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={sending}
+                    onClick={() =>
+                      handleDeleteConversation(conversation.id)
+                    }
+                    className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                    aria-label={`${conversation.title} 삭제`}
+                  >
+                    삭제
+                  </button>
+                </div>
+              ))}
           </div>
 
           <p className="mt-auto px-2 pt-6 text-xs leading-relaxed text-fixops-muted">
-            현재 대화는 이 화면에서만 유지되며 새로고침하면 초기화됩니다.
+            대화 내역은 서버에 저장되며 다시 로그인해도 유지됩니다.
           </p>
         </aside>
 
         {/* 채팅 패널 */}
         <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-[14px] border border-fixops-border bg-white">
-          <div className="border-b border-fixops-border px-7 py-6">
+          <div className="flex items-center justify-between gap-3 border-b border-fixops-border px-7 py-5">
             <h2 className="text-[19px] font-bold">✧ FixOps AI Assistant</h2>
+
+            <Button
+              variant="secondary"
+              onClick={() => setDocumentModalOpen(true)}
+              disabled={!organizationId}
+            >
+              문서 관리
+            </Button>
           </div>
 
           {/* 메시지 영역 */}
@@ -217,6 +457,12 @@ export default function AIChatPage() {
             aria-label="AI 채팅 메시지"
             aria-live="polite"
           >
+            {loadingMessages && (
+              <p className="text-sm text-fixops-muted">
+                이전 대화를 불러오는 중...
+              </p>
+            )}
+
             {messages.map((item) => (
               <div
                 key={item.id}
@@ -226,7 +472,11 @@ export default function AIChatPage() {
                     : "mr-auto bg-fixops-background"
                 }`}
               >
-                {item.content}
+                <div>{item.content}</div>
+
+                {item.role === "assistant" && (
+                  <RagSources sources={item.sources} />
+                )}
               </div>
             ))}
 
@@ -235,25 +485,6 @@ export default function AIChatPage() {
                 AI가 응답을 생성하고 있습니다...
               </div>
             )}
-          </div>
-
-          {/* 추천 질문 */}
-          <div className="px-6 pb-3">
-            <p className="mb-2 text-xs text-fixops-muted">추천 질문</p>
-
-            <div className="flex flex-wrap gap-2">
-              {suggestions.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  disabled={sending}
-                  onClick={() => setMessage(suggestion)}
-                  className="rounded-full border border-fixops-border bg-white px-3 py-2 text-xs text-fixops-muted hover:bg-[#eaf1ff]"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* 오류 */}
@@ -285,13 +516,28 @@ export default function AIChatPage() {
 
             <button
               type="submit"
-              disabled={sending || !message.trim()}
+              disabled={
+                sending ||
+                loadingHistory ||
+                loadingMessages ||
+                !activeId ||
+                !message.trim()
+              }
               className="mb-1 rounded-full bg-fixops-primary px-5 py-2 text-xs font-bold text-white hover:bg-fixops-primary-hover"
             >
               {sending ? "전송 중" : "전송"}
             </button>
           </form>
         </div>
+
+        <DocumentManagementModal
+          open={documentModalOpen}
+          onClose={() => setDocumentModalOpen(false)}
+          organizationId={organizationId}
+          complexId={complexId}
+          organizationKind={activeOrganizationKind}
+          role={activeRole}
+        />
       </div>
     </section>
   );
