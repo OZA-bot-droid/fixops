@@ -6,6 +6,7 @@ import OnboardingGuard from "../components/guards/OnboardingGuard";
 import OrganizationJoinPage from "../features/member/OrganizationJoinPage";
 import MemberManagementPage from "../features/member/MemberManagementPage";
 import LocationManagementPage from "../features/asset/LocationManagementPage";
+import InventoryPage from "../features/inventory/InventoryPage";
 import ResidentEnrollmentPage from "../features/member/ResidentEnrollmentPage";
 import ResidentRegistrationCodePage from "../features/member/ResidentRegistrationCodePage";
 import ResidentReviewPage from "../features/member/ResidentReviewPage";
@@ -121,7 +122,7 @@ export default function App() {
               <Route path="/audit" element={<UnavailablePage title="권한 변경 감사 로그" />} />
             </Route>
             <Route element={<RoleGuard roles={["ADMIN", "TECHNICIAN"]} />}>
-              <Route path="/inventory" element={<ComingSoon name="부품·재고" />} />
+              <Route path="/inventory" element={<InventoryPage />} />
               <Route path="/ai" element={<ComingSoon name="AI 점검센터" />} />
             </Route>
             <Route element={<RoleGuard roles={["ADMIN", "TECHNICIAN"]} requireComplex />}>
