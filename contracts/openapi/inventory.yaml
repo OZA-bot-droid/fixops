@@ -30,6 +30,18 @@ info:
       - 같은 operationKey 재시도는 WorkOrder 확인 없이 처음 결과를 200 으로 돌려준다.
       - WorkOrder 조회 API 연결 전까지는 503. 개발용 가짜(FakeWorkOrderClient)는 설정으로만 켠다.
 
+    D11 결정 사항 (2026-11-26)
+      - 부품 사용 시 실제 WorkOrder API(GET /work-orders/{id})로 작업 상태·조직·배정 기사를 확인한다.
+      - 사용자의 Authorization(JWT)을 WorkOrder 호출에 그대로 전달한다 (WorkOrder 도 JWT 방식으로 전환 예정, 박천보 확인).
+      - WorkOrder 응답 오류 변환: 404→404, 401→401, 403→403, 400·5xx·시간 초과·연결 실패→503 (차감하지 않음).
+      - 부품 사용 가능 상태는 IN_PROGRESS 만으로 확정 (기사가 작업 시작 시 IN_PROGRESS 로 바뀜, 박천보 확인).
+
+    D12 결정 사항 (2026-11-27, 팀장 승인)
+      - 조회 API 추가: GET /inventory/movements (재고 변동 이력, ADMIN), GET /inventory/usages (작업별 사용 내역, ADMIN·TECHNICIAN).
+      - 재고는 조직 단위로 관리한다. complexId 는 권한 확인(Member)에만 쓰고 데이터를 단지별로 나누지 않는다.
+      - 부품 요청(TECHNICIAN 요청 → ADMIN 승인·반려) 추가 승인. 승인은 기록만 하고 재고는 관리자가 입고로 늘린다.
+      - GET·PATCH /inventory/parts/{partId} 승인 완료.
+
     미결 항목 (확정되면 본 문서에 반영)
       1. 비활성 부품과 같은 SKU 등록 시 동작. 본 문서는 409 + 기존 partId 안내로 제안.
       2. 재고가 남은 부품의 비활성화 허용 여부. 본 문서에는 비활성화 API 미포함(P0 제외 제안).
@@ -53,6 +65,8 @@ tags:
     description: 부품 기준 정보
   - name: stock
     description: 입고·사용에 따른 재고 변동
+  - name: requests
+    description: 기술자의 부품 요청과 관리자의 승인·반려 (D12)
 
 paths:
   /inventory/parts:
@@ -247,7 +261,198 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
+  /inventory/part-requests:
+    get:
+      tags: [requests]
+      summary: 부품 요청 목록
+      description: D12. ADMIN 은 조직 전체, TECHNICIAN 은 자기 요청만 (서버가 정한다). 최신순.
+      operationId: listPartRequests
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+        - name: status
+          in: query
+          schema: { type: string, enum: [REQUESTED, APPROVED, REJECTED] }
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PartRequestPage' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+    post:
+      tags: [requests]
+      summary: 부품 요청 등록
+      description: |
+        D12. ADMIN, TECHNICIAN. 재고는 바뀌지 않는다.
+        등록된 부품은 partId 만 보내면 서버가 부품 정보로 채운다.
+        목록에 없는 새 부품은 partName·sku 필수, 이미 있는 SKU 면 409 DUPLICATE_SKU.
+      operationId: createPartRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PartRequestCreateRequest' }
+      responses:
+        '201':
+          description: 요청 등록됨
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PartRequest' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: DUPLICATE_SKU (새 부품인데 이미 등록된 SKU)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /inventory/part-requests/{requestId}/approve:
+    post:
+      tags: [requests]
+      summary: 부품 요청 승인 (기록만)
+      description: D12. ADMIN. 재고는 바뀌지 않는다. 실제 입고는 POST /inventory/receipts 로 따로 등록한다.
+      operationId: approvePartRequest
+      parameters:
+        - { $ref: '#/components/parameters/RequestId' }
+      responses:
+        '200':
+          description: 승인됨
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PartRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: INVALID_STATE_TRANSITION (이미 승인·반려된 요청)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /inventory/part-requests/{requestId}/reject:
+    post:
+      tags: [requests]
+      summary: 부품 요청 반려 (사유 필수)
+      operationId: rejectPartRequest
+      parameters:
+        - { $ref: '#/components/parameters/RequestId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rejectReason]
+              properties:
+                rejectReason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: 반려됨
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PartRequest' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: INVALID_STATE_TRANSITION (이미 승인·반려된 요청)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /inventory/movements:
+    get:
+      tags: [stock]
+      summary: 재고 변동 이력 (원장) 조회
+      description: |
+        D12. 호출자 조직의 원장(stock_movement)을 최신순으로 반환한다. ADMIN 만.
+        balanceAfter 는 저장값이 아니라 같은 부품의 원장을 시간 순으로 더한 값이다 (재고 = 원장의 합).
+      operationId: listMovements
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+        - name: partId
+          in: query
+          description: 주면 그 부품 하나의 이력만
+          schema: { type: integer, format: int64, minimum: 1 }
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [RECEIPT, USAGE, STOCK_RETURN, ADJUSTMENT]
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/MovementPage' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+
   /inventory/usages:
+    get:
+      tags: [stock]
+      summary: 작업별 부품 사용 내역 조회
+      description: D12. 호출자 조직의 부품 사용 기록을 최신순으로 반환한다. ADMIN, TECHNICIAN.
+      operationId: listUsages
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+        - name: workOrderId
+          in: query
+          description: 주면 그 작업지시에서 쓴 부품만
+          schema: { type: integer, format: int64, minimum: 1 }
+        - name: partId
+          in: query
+          description: 주면 그 부품을 쓴 기록만
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/UsageHistoryPage' }
+        '400': { $ref: '#/components/responses/InvalidInput' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+
     post:
       tags: [stock]
       summary: 작업에 부품 사용 (재고 차감)
@@ -359,6 +564,11 @@ components:
         필드,방향 (예: sku,asc). 허용 필드: sku, name, quantity. 방향: asc, desc (생략 시 asc).
         그 외 필드는 400 INVALID_INPUT.
       schema: { type: string, default: 'sku,asc' }
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -497,6 +707,104 @@ components:
         quantity: { type: integer, minimum: 1 }
         remainingQuantity: { type: integer, minimum: 0 }
         occurredAt: { type: string, format: date-time }
+
+    Movement:
+      type: object
+      required: [movementId, partId, sku, partName, movementType, quantityDelta, balanceAfter, occurredAt]
+      properties:
+        movementId: { type: integer, format: int64 }
+        partId: { type: integer, format: int64 }
+        sku: { type: string }
+        partName: { type: string }
+        movementType: { type: string, enum: [RECEIPT, USAGE, STOCK_RETURN, ADJUSTMENT] }
+        quantityDelta: { type: integer, description: '+ 증가, - 감소' }
+        balanceAfter: { type: integer, minimum: 0, description: 이 기록 직후의 재고 }
+        workOrderId: { type: [integer, 'null'], format: int64 }
+        actorId: { type: [integer, 'null'], format: int64, description: 처리한 회원 번호 }
+        note: { type: [string, 'null'] }
+        occurredAt: { type: string, format: date-time }
+
+    MovementPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/Movement' }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+
+    UsageHistory:
+      type: object
+      required: [usageId, workOrderId, partId, sku, partName, quantity, status, occurredAt]
+      properties:
+        usageId: { type: integer, format: int64 }
+        workOrderId: { type: integer, format: int64 }
+        partId: { type: integer, format: int64 }
+        sku: { type: string }
+        partName: { type: string }
+        quantity: { type: integer, minimum: 1 }
+        status: { type: string, enum: [ACTIVE, CANCELLED] }
+        usedBy: { type: [integer, 'null'], format: int64, description: 사용한 회원 번호 }
+        occurredAt: { type: string, format: date-time }
+
+    PartRequestCreateRequest:
+      type: object
+      required: [quantity]
+      properties:
+        partId: { type: integer, format: int64, minimum: 1, description: 등록된 부품이면 이것만 }
+        partName: { type: string, maxLength: 200, description: 새 부품일 때 필수 }
+        sku: { type: string, maxLength: 64, description: 새 부품일 때 필수 }
+        category: { type: string, maxLength: 64 }
+        unit: { type: string, maxLength: 16 }
+        safetyStock: { type: integer, minimum: 0 }
+        quantity: { type: integer, minimum: 1, maximum: 100000 }
+        workOrderId: { type: integer, format: int64, minimum: 1 }
+        reason: { type: string, maxLength: 500 }
+
+    PartRequest:
+      type: object
+      required: [requestId, partName, quantity, status, requestedBy, requestedAt]
+      properties:
+        requestId: { type: integer, format: int64 }
+        partId: { type: [integer, 'null'], format: int64 }
+        partName: { type: string }
+        sku: { type: [string, 'null'] }
+        category: { type: [string, 'null'] }
+        unit: { type: [string, 'null'] }
+        safetyStock: { type: [integer, 'null'] }
+        quantity: { type: integer, minimum: 1 }
+        workOrderId: { type: [integer, 'null'], format: int64 }
+        reason: { type: [string, 'null'] }
+        status: { type: string, enum: [REQUESTED, APPROVED, REJECTED] }
+        rejectReason: { type: [string, 'null'] }
+        requestedBy: { type: integer, format: int64 }
+        decidedBy: { type: [integer, 'null'], format: int64 }
+        requestedAt: { type: string, format: date-time }
+        decidedAt: { type: [string, 'null'], format: date-time }
+
+    PartRequestPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/PartRequest' }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+
+    UsageHistoryPage:
+      type: object
+      required: [content, page, size, totalElements]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/UsageHistory' }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
 
   responses:
     InvalidInput:
