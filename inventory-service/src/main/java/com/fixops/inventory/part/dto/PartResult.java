@@ -20,15 +20,16 @@ public record PartResult(
         PartStatus status,
         int quantity,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        boolean hasImage) {   // 부품 사진이 있는지 (사진은 GET /inventory/parts/{id}/image 로 따로 받는다)
 
     /** 재고 행에서 부품까지 꺼내 결과로 바꾼다. */
-    public static PartResult from(StockBalance balance) {
+    public static PartResult from(StockBalance balance, boolean hasImage) {
         Part p = balance.getPart();
         return new PartResult(
                 p.getId(), p.getSku(), p.getName(), p.getCategory(), p.getUnit(),
                 p.getSafetyStock(), p.getStatus(), balance.getQuantity(),
-                p.getCreatedAt(), p.getUpdatedAt());
+                p.getCreatedAt(), p.getUpdatedAt(), hasImage);
     }
 
     /** 목록 조회(SQL)의 결과 한 줄을 결과로 바꾼다. status 는 DB 글자('ACTIVE')를 enum 으로 바꾼다. */
@@ -36,6 +37,6 @@ public record PartResult(
         return new PartResult(
                 row.getId(), row.getSku(), row.getName(), row.getCategory(), row.getUnit(),
                 row.getSafetyStock(), PartStatus.valueOf(row.getStatus()), row.getQuantity(),
-                row.getCreatedAt(), row.getUpdatedAt());
+                row.getCreatedAt(), row.getUpdatedAt(), Boolean.TRUE.equals(row.getHasImage()));
     }
 }

@@ -25,4 +25,5 @@ public interface PartStockRow {
     Integer getQuantity();
     Instant getCreatedAt();
     Instant getUpdatedAt();
+    Boolean getHasImage();     // 부품 사진이 있는지 (part_image 에 행이 있으면 true)
 }

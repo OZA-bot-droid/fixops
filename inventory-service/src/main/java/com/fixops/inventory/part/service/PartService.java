@@ -1,5 +1,6 @@
 package com.fixops.inventory.part.service;
 
+import com.fixops.inventory.common.image.UploadedImage;
 import com.fixops.inventory.part.exception.DuplicateSkuException;
 import com.fixops.inventory.part.exception.PartNotFoundException;
 import com.fixops.inventory.stock.exception.StockNotFoundException;
@@ -17,6 +18,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 부품 기준 정보 (등록, 목록 조회, 단건 조회).
@@ -27,11 +29,20 @@ public class PartService {
 
     private final PartRepository partRepository;
     private final StockBalanceRepository stockBalanceRepository;
+    private final PartImageStore partImages;   // 부품 사진 (선택, 1장)
 
     // 생성자가 하나면 Spring 이 자동으로 Repository 를 넣어 준다 (생성자 주입).
-    public PartService(PartRepository partRepository, StockBalanceRepository stockBalanceRepository) {
+    public PartService(PartRepository partRepository, StockBalanceRepository stockBalanceRepository,
+                       PartImageStore partImages) {
         this.partRepository = partRepository;
         this.stockBalanceRepository = stockBalanceRepository;
+        this.partImages = partImages;
+    }
+
+    /** 부품 등록 (사진 없이) */
+    @Transactional
+    public PartResult create(long organizationId, PartCreateRequest r) {
+        return create(organizationId, r, null);
     }
 
     /**
@@ -40,7 +51,11 @@ public class PartService {
      * 둘 중 하나라도 실패하면 둘 다 취소되어 "재고 행 없는 부품"이 생기지 않는다.
      */
     @Transactional
-    public PartResult create(long organizationId, PartCreateRequest r) {
+    public PartResult create(long organizationId, PartCreateRequest r, MultipartFile image) {
+        boolean hasImage = image != null && !image.isEmpty();
+        if (hasImage) {
+            UploadedImage.validate(image);   // 잘못된 사진이면 아무것도 저장하기 전에 400
+        }
         // 입력 정리: 앞뒤 공백 제거. " BOLT-M8" 과 "BOLT-M8" 이 서로 다른 SKU 로 등록되는 것을 막는다.
         // (빈칸·길이 검사는 Controller 의 @Valid 가 이미 했다. 여기서는 다른 곳에서 불려도 안전하게 한 번 더 확인)
         String sku = requireText(r.sku(), "sku");
@@ -68,7 +83,12 @@ public class PartService {
         // 3) 수량 0인 재고 행 저장
         StockBalance balance = stockBalanceRepository.save(StockBalance.zeroFor(part));
 
-        return PartResult.from(balance);
+        // 4) 사진 (있으면). 같은 트랜잭션이라 실패하면 1)~3) 도 취소된다
+        if (hasImage) {
+            partImages.save(organizationId, part.getId(), image);
+        }
+
+        return PartResult.from(balance, hasImage);
     }
 
     /**
@@ -99,7 +119,7 @@ public class PartService {
                 .orElseThrow(() -> new PartNotFoundException(partId));
         StockBalance balance = stockBalanceRepository.findByPartId(part.getId())
                 .orElseThrow(() -> new StockNotFoundException("stock balance not found: partId=" + partId));
-        return PartResult.from(balance);
+        return PartResult.from(balance, partImages.exists(partId));
     }
 
     /**
@@ -130,7 +150,7 @@ public class PartService {
 
         StockBalance balance = stockBalanceRepository.findByPartId(part.getId())
                 .orElseThrow(() -> new StockNotFoundException("stock balance not found: partId=" + part.getId()));
-        return PartResult.from(balance);
+        return PartResult.from(balance, partImages.exists(partId));
     }
 
     /** 비어 있으면 안 되는 글자 값: 공백이면 400(IllegalArgumentException), 아니면 앞뒤 공백을 지워 돌려준다. */

@@ -1,5 +1,6 @@
 package com.fixops.inventory.part.controller;
 
+import com.fixops.inventory.common.image.StoredImage;
 import com.fixops.inventory.common.response.ApiResponse;
 import com.fixops.inventory.common.security.CurrentMember;
 import com.fixops.inventory.common.security.InventoryAuthorization;
@@ -8,6 +9,7 @@ import com.fixops.inventory.part.dto.PartPageResult;
 import com.fixops.inventory.part.dto.PartResult;
 import com.fixops.inventory.part.dto.PartStatusFilter;
 import com.fixops.inventory.part.dto.PartUpdateRequest;
+import com.fixops.inventory.part.service.PartImageStore;
 import com.fixops.inventory.part.service.PartService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -19,6 +21,8 @@ import java.util.Set;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,7 +33,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 부품 API 입구 (OpenAPI: GET/POST /api/inventory/parts, GET·PATCH /api/inventory/parts/{partId}).
@@ -55,10 +61,12 @@ public class PartController {
 
     private final PartService partService;
     private final InventoryAuthorization authorization;
+    private final PartImageStore partImages;   // 부품 사진
 
-    public PartController(PartService partService, InventoryAuthorization authorization) {
+    public PartController(PartService partService, InventoryAuthorization authorization, PartImageStore partImages) {
         this.partService = partService;
         this.authorization = authorization;
+        this.partImages = partImages;
     }
 
     /**
@@ -67,9 +75,9 @@ public class PartController {
      */
     @GetMapping
     public ApiResponse<PartPageResult> list(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,   // 로그인 JWT (Gateway 가 확인한 것)
+            @RequestParam(required = false) @Positive Long organizationId,                   // 어느 조직에서 일하는지 (Member 가 확인)
+            @RequestParam(required = false) @Positive Long complexId,                        // BUILDING 이면 단지 (권한 확인에만 사용)
             @RequestParam(required = false) @Size(max = 100) String q,
             @RequestParam(defaultValue = "ACTIVE") PartStatusFilter status,
             @RequestParam(defaultValue = "false") boolean lowStockOnly,
@@ -77,7 +85,7 @@ public class PartController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
             @RequestParam(defaultValue = "sku,asc") String sort) {
 
-        CurrentMember member = authorization.requireRead(memberId, role, organizationId);
+        CurrentMember member = authorization.requireRead(bearerToken, organizationId, complexId);
 
         Pageable pageable = PageRequest.of(page, size, toSort(sort));
 
@@ -90,21 +98,66 @@ public class PartController {
      * Idempotency-Key 는 계약상 필수라 받기는 하지만, 부품은 "단지 + SKU" 가 이미 유일해서
      * 같은 요청을 두 번 보내도 두 번째는 409 가 된다. 키 저장은 입고 API 를 만들 때 함께 다룬다.
      */
-    @PostMapping
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<PartResult>> create(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,   // 로그인 JWT (Gateway 가 확인한 것)
+            @RequestParam(required = false) @Positive Long organizationId,                   // 어느 조직에서 일하는지 (Member 가 확인)
+            @RequestParam(required = false) @Positive Long complexId,                        // BUILDING 이면 단지 (권한 확인에만 사용)
             @RequestHeader("Idempotency-Key") @Size(min = 8, max = 100) String idempotencyKey,
             @Valid @RequestBody PartCreateRequest request) {
 
-        CurrentMember member = authorization.requireAdmin(memberId, role, organizationId);
+        CurrentMember member = authorization.requireAdmin(bearerToken, organizationId, complexId);
 
         PartResult created = partService.create(member.organizationId(), request);
 
         return ResponseEntity
                 .created(URI.create("/api/inventory/parts/" + created.id()))   // 201 + Location 헤더
                 .body(ApiResponse.ok(created));
+    }
+
+    /**
+     * 사진과 함께 부품 등록 (ADMIN 만, multipart/form-data).
+     *   part  : 등록 본문 JSON (위 JSON 등록과 같은 모양, 이 부분의 Content-Type 은 application/json)
+     *   image : 부품 사진 0~1장 (JPEG/PNG/WEBP, 5MB 이하)
+     * 부품·재고 행·사진을 한 트랜잭션으로 저장한다.
+     */
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<PartResult>> createWithImage(
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,
+            @RequestParam(required = false) @Positive Long organizationId,
+            @RequestParam(required = false) @Positive Long complexId,
+            @RequestHeader("Idempotency-Key") @Size(min = 8, max = 100) String idempotencyKey,
+            @Valid @RequestPart("part") PartCreateRequest request,
+            @RequestPart(value = "image", required = false) MultipartFile image) {
+
+        CurrentMember member = authorization.requireAdmin(bearerToken, organizationId, complexId);
+
+        PartResult created = partService.create(member.organizationId(), request, image);
+
+        return ResponseEntity
+                .created(URI.create("/api/inventory/parts/" + created.id()))
+                .body(ApiResponse.ok(created));
+    }
+
+    /**
+     * 부품 사진 보기 (ADMIN, TECHNICIAN). 응답은 JSON 이 아니라 사진 자체(image/jpeg 등).
+     * 사진이 없으면 404. 화면은 로그인 JWT 를 붙여야 해서 img 태그로 바로 부르지 않고, 받아서 보여 준다.
+     */
+    @GetMapping("/{partId}/image")
+    public ResponseEntity<byte[]> image(
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,
+            @RequestParam(required = false) @Positive Long organizationId,
+            @RequestParam(required = false) @Positive Long complexId,
+            @PathVariable @Positive long partId) {
+
+        CurrentMember member = authorization.requireRead(bearerToken, organizationId, complexId);
+
+        StoredImage file = partImages.load(member.organizationId(), partId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .cacheControl(CacheControl.noStore())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(file.data());
     }
 
     /**
@@ -118,12 +171,12 @@ public class PartController {
      */
     @GetMapping("/{partId}")
     public ApiResponse<PartResult> get(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,   // 로그인 JWT (Gateway 가 확인한 것)
+            @RequestParam(required = false) @Positive Long organizationId,                   // 어느 조직에서 일하는지 (Member 가 확인)
+            @RequestParam(required = false) @Positive Long complexId,                        // BUILDING 이면 단지 (권한 확인에만 사용)
             @PathVariable @Positive long partId) {
 
-        CurrentMember member = authorization.requireRead(memberId, role, organizationId);
+        CurrentMember member = authorization.requireRead(bearerToken, organizationId, complexId);
 
         return ApiResponse.ok(partService.get(member.organizationId(), partId));   // 200
     }
@@ -137,13 +190,13 @@ public class PartController {
      */
     @PatchMapping("/{partId}")
     public ApiResponse<PartResult> update(
-            @RequestHeader(value = "X-Member-Id", required = false) Long memberId,
-            @RequestHeader(value = "X-User-Role", required = false) String role,
-            @RequestHeader(value = "X-Org-Id", required = false) Long organizationId,
+            @RequestHeader(value = "Authorization", required = false) String bearerToken,   // 로그인 JWT (Gateway 가 확인한 것)
+            @RequestParam(required = false) @Positive Long organizationId,                   // 어느 조직에서 일하는지 (Member 가 확인)
+            @RequestParam(required = false) @Positive Long complexId,                        // BUILDING 이면 단지 (권한 확인에만 사용)
             @PathVariable @Positive long partId,
             @Valid @RequestBody PartUpdateRequest request) {
 
-        CurrentMember member = authorization.requireAdmin(memberId, role, organizationId);
+        CurrentMember member = authorization.requireAdmin(bearerToken, organizationId, complexId);
 
         return ApiResponse.ok(partService.update(member.organizationId(), partId, request));   // 200
     }

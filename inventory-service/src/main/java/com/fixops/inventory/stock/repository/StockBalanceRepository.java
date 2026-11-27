@@ -69,7 +69,8 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
                    p.status       AS status,
                    b.quantity     AS quantity,
                    p.created_at   AS "createdAt",
-                   p.updated_at   AS "updatedAt"
+                   p.updated_at   AS "updatedAt",
+                   EXISTS (SELECT 1 FROM part_image i WHERE i.part_id = p.id) AS "hasImage"
               FROM stock_balance b
               JOIN part p ON p.id = b.part_id
              WHERE p.organization_id = :organizationId
