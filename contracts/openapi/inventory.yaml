@@ -42,6 +42,13 @@ info:
       - 부품 요청(TECHNICIAN 요청 → ADMIN 승인·반려) 추가 승인. 승인은 기록만 하고 재고는 관리자가 입고로 늘린다.
       - GET·PATCH /inventory/parts/{partId} 승인 완료.
 
+    D13 결정 사항 (2026-11-27) — 인증 입구 변경 (Asset 과 같은 방식)
+      - 모든 요청: Authorization(JWT) + 쿼리 organizationId (+ BUILDING 조직이면 complexId).
+      - Inventory 가 Member POST /internal/authorization/check 로 구성원·역할을 확인한다 (X-FixOps-Service-Key 사용).
+      - X-Member-Id / X-User-Role / X-Org-Id 헤더는 더 이상 받지 않는다 (Gateway 가 지우는 위조 가능 헤더).
+      - complexId 는 권한 확인에만 쓰고, 재고 데이터는 조직 단위 그대로다.
+      - Member 에 연결할 수 없으면 503 DEPENDENCY_UNAVAILABLE (아무것도 바꾸지 않음).
+
     미결 항목 (확정되면 본 문서에 반영)
       1. 비활성 부품과 같은 SKU 등록 시 동작. 본 문서는 409 + 기존 partId 안내로 제안.
       2. 재고가 남은 부품의 비활성화 허용 여부. 본 문서에는 비활성화 API 미포함(P0 제외 제안).
@@ -70,6 +77,9 @@ tags:
 
 paths:
   /inventory/parts:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     get:
       tags: [parts]
       summary: 부품 목록 조회
@@ -119,9 +129,22 @@ paths:
         - { $ref: '#/components/parameters/IdempotencyKey' }
       requestBody:
         required: true
+        description: |
+          부품 사진 (2026-11-27): multipart/form-data 로 보내면 사진 1장을 함께 저장한다 (등록할 때만, DB 저장).
+          JPEG/PNG/WEBP, 5MB 이하. 틀리면 400 INVALID_INPUT (부품도 등록되지 않음).
         content:
           application/json:
             schema: { $ref: '#/components/schemas/PartCreateRequest' }
+          multipart/form-data:
+            schema:
+              type: object
+              required: [part]
+              properties:
+                part: { $ref: '#/components/schemas/PartCreateRequest' }
+                image: { type: string, format: binary }
+            encoding:
+              part: { contentType: application/json }
+              image: { contentType: 'image/jpeg, image/png, image/webp' }
       responses:
         '201':
           description: 등록 성공
@@ -153,7 +176,35 @@ paths:
                     traceId: trace-id-example
                     timestamp: '2026-11-20T04:00:00Z'
 
+  /inventory/parts/{partId}/image:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
+    get:
+      tags: [parts]
+      summary: 부품 사진 보기
+      description: ADMIN, TECHNICIAN. 응답은 사진 자체 (Cache-Control no-store, nosniff). 사진이 없거나 다른 조직 부품이면 404.
+      operationId: getPartImage
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: 사진
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /inventory/parts/{partId}:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     get:
       tags: [parts]
       summary: 부품 하나 조회
@@ -214,6 +265,9 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
 
   /inventory/receipts:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     post:
       tags: [stock]
       summary: 입고
@@ -262,6 +316,9 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
   /inventory/part-requests:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     get:
       tags: [requests]
       summary: 부품 요청 목록
@@ -294,12 +351,27 @@ paths:
         D12. ADMIN, TECHNICIAN. 재고는 바뀌지 않는다.
         등록된 부품은 partId 만 보내면 서버가 부품 정보로 채운다.
         목록에 없는 새 부품은 partName·sku 필수, 이미 있는 SKU 면 409 DUPLICATE_SKU.
+        사진 첨부 (2026-11-27): multipart/form-data 로 보내면 사진을 1장 함께 저장한다 (요청할 때만, DB 저장).
+        JPEG/PNG/WEBP, 장당 5MB 이하. 형식은 파일 앞부분으로 다시 확인하며, 틀리면 400 INVALID_INPUT (요청도 저장되지 않음).
       operationId: createPartRequest
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/PartRequestCreateRequest' }
+          multipart/form-data:
+            schema:
+              type: object
+              required: [request]
+              properties:
+                request: { $ref: '#/components/schemas/PartRequestCreateRequest' }
+                images:
+                  type: array
+                  maxItems: 1
+                  items: { type: string, format: binary }
+            encoding:
+              request: { contentType: application/json }
+              images: { contentType: 'image/jpeg, image/png, image/webp' }
       responses:
         '201':
           description: 요청 등록됨
@@ -321,7 +393,38 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
+  /inventory/part-requests/{requestId}/images/{imageId}:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
+    get:
+      tags: [requests]
+      summary: 부품 요청 첨부 사진 보기
+      description: |
+        ADMIN 은 조직 전체, TECHNICIAN 은 자기 요청의 사진만. 응답은 사진 자체 (Cache-Control no-store, nosniff).
+        없거나 다른 조직의 사진이면 404.
+      operationId: getPartRequestImage
+      parameters:
+        - { $ref: '#/components/parameters/RequestId' }
+        - name: imageId
+          in: path
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200':
+          description: 사진
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/OrgAccessDenied' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /inventory/part-requests/{requestId}/approve:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     post:
       tags: [requests]
       summary: 부품 요청 승인 (기록만)
@@ -350,6 +453,9 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
   /inventory/part-requests/{requestId}/reject:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     post:
       tags: [requests]
       summary: 부품 요청 반려 (사유 필수)
@@ -387,6 +493,9 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
   /inventory/movements:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     get:
       tags: [stock]
       summary: 재고 변동 이력 (원장) 조회
@@ -422,6 +531,9 @@ paths:
         '403': { $ref: '#/components/responses/OrgAccessDenied' }
 
   /inventory/usages:
+    parameters:
+      - { $ref: '#/components/parameters/OrganizationId' }
+      - { $ref: '#/components/parameters/ComplexId' }
     get:
       tags: [stock]
       summary: 작업별 부품 사용 내역 조회
@@ -549,6 +661,18 @@ components:
       bearerFormat: JWT
 
   parameters:
+    OrganizationId:
+      name: organizationId
+      in: query
+      required: true
+      description: 상단에서 고른 조직. Inventory 가 Member 에 이 조직의 구성원인지 확인한다 (D13)
+      schema: { type: integer, format: int64, minimum: 1 }
+    ComplexId:
+      name: complexId
+      in: query
+      required: false
+      description: BUILDING 조직이면 필수(단지), FACTORY 면 보내지 않는다. 권한 확인에만 쓴다 (D13)
+      schema: { type: integer, format: int64, minimum: 1 }
     Page:
       name: page
       in: query
@@ -630,6 +754,7 @@ components:
           minimum: 0
           description: 현재 재고 수량 (stock_balance)
           examples: [98]
+        hasImage: { type: boolean, description: '부품 사진이 있는지 (사진은 GET /inventory/parts/{partId}/image)' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -783,6 +908,19 @@ components:
         decidedBy: { type: [integer, 'null'], format: int64 }
         requestedAt: { type: string, format: date-time }
         decidedAt: { type: [string, 'null'], format: date-time }
+        images:
+          type: array
+          description: 첨부 사진 정보 (내용은 GET .../images/{imageId})
+          items: { $ref: '#/components/schemas/PartRequestImage' }
+
+    PartRequestImage:
+      type: object
+      required: [imageId, fileName, contentType, sizeBytes]
+      properties:
+        imageId: { type: integer, format: int64 }
+        fileName: { type: string }
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        sizeBytes: { type: integer }
 
     PartRequestPage:
       type: object
