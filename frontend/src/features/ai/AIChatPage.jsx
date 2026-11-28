@@ -56,6 +56,8 @@ export default function AIChatPage() {
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
   const sendingRef = useRef(false); // 중복 요청 방지
+  const managingRef = useRef(false);  // 새 대화 생성 및 삭제의 중복 실행을 즉시 차단
+  const [managingConversation, setManagingConversation] = useState(false);  // 생성 및 삭제 중 화면 버튼 상태에 반영
 
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeId
@@ -122,6 +124,7 @@ export default function AIChatPage() {
     const controller = new AbortController();
     async function loadMessages() {
       setLoadingMessages(true);
+      setMessages([])
 
       try {
         const detail = await fetchConversationDetail({
@@ -163,7 +166,13 @@ export default function AIChatPage() {
   }, [message]);
 
   async function startNewChat() {
-    if (sending || loadingHistory) return;
+    if (
+      sending ||
+      loadingHistory ||
+      loadingMessages ||
+      sendingRef.current ||
+      managingRef.current
+    ) return;
 
     const orgId = organizationId == null ? null : Number(organizationId)
     const selectedComplexId = complexId === null ? null : Number(complexId);
@@ -184,6 +193,8 @@ export default function AIChatPage() {
       return;
     }
 
+    managingRef.current = true;
+    setManagingConversation(true);
     setError("");
 
     try {
@@ -201,13 +212,24 @@ export default function AIChatPage() {
       setMessages([]);
       setMessage("");
     } catch (err) {
-      setError(explainError(err));
+      setError(getAIChatErrorMessage(err));
+    } finally {
+      managingRef.current = false;
+      setManagingConversation(false);
     }
   }
 
   async function handleDeleteConversation(conversationId) {
-    if (sending) return;
+    if (
+      sending ||
+      loadingHistory ||
+      loadingMessages ||
+      sendingRef.current ||
+      managingRef.current
+    ) return;
 
+    managingRef.current = true;
+    setManagingConversation(true);
     setError("");
 
     try {
@@ -227,7 +249,10 @@ export default function AIChatPage() {
         setMessages([]);
       }
     } catch (err) {
-      setError(explainError(err));
+      setError(getAIChatErrorMessage(err));
+    } finally {
+      managingRef.current = false;
+      setManagingConversation(false);
     }
   }
 
@@ -239,6 +264,7 @@ export default function AIChatPage() {
     if (
       !text ||
       sendingRef.current ||
+      managingRef.current ||
       sending ||
       loadingHistory ||
       loadingMessages
@@ -374,7 +400,12 @@ export default function AIChatPage() {
             <button
               type="button"
               onClick={startNewChat}
-              disabled={sending || loadingHistory}
+              disabled={
+                sending ||
+                managingConversation ||
+                loadingHistory ||
+                loadingMessages
+              }
               className="rounded-lg bg-fixops-primary px-3 py-2 text-xs font-semibold text-white hover:bg-fixops-primary-hover"
             >
               + 새 대화
@@ -406,7 +437,11 @@ export default function AIChatPage() {
                 >
                   <button
                     type="button"
-                    disabled={sending || loadingMessages}
+                    disabled={
+                      sending ||
+                      loadingMessages ||
+                      managingConversation
+                    }
                     onClick={() => {
                       setActiveId(conversation.id);
                       setError("");
@@ -418,7 +453,12 @@ export default function AIChatPage() {
 
                   <button
                     type="button"
-                    disabled={sending}
+                    disabled={
+                      sending ||
+                      managingConversation ||
+                      loadingHistory ||
+                      loadingMessages
+                    }
                     onClick={() =>
                       handleDeleteConversation(conversation.id)
                     }
@@ -548,6 +588,7 @@ export default function AIChatPage() {
               type="submit"
               disabled={
                 sending ||
+                managingConversation ||
                 loadingHistory ||
                 loadingMessages ||
                 !activeId ||
