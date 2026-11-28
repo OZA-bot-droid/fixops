@@ -52,12 +52,13 @@ export default function AIChatPage() {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [managingConversation, setManagingConversation] = useState(false);  // 생성 및 삭제 중 화면 버튼 상태에 반영
 
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
   const sendingRef = useRef(false); // 중복 요청 방지
   const managingRef = useRef(false);  // 새 대화 생성 및 삭제의 중복 실행을 즉시 차단
-  const [managingConversation, setManagingConversation] = useState(false);  // 생성 및 삭제 중 화면 버튼 상태에 반영
+  const skipInitialLoadRef = useRef(null);  // 첫 메시지 전송으로 방금 생성된 대화방은 기존 메시지 조회를 생략해 임시 메시지가 사라지지 않도록 한다.
 
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeId
@@ -119,6 +120,14 @@ export default function AIChatPage() {
       return;
     }
 
+    // 첫 메시지를 보내기 위해 방금 생성한 대화방이면
+    // 서버 조회로 임시 사용자 메시지를 덮어쓰지 않는다.
+    if (skipInitialLoadRef.current === activeId) {
+      skipInitialLoadRef.current = null;
+      setLoadingMessages(false);
+      return;
+    }
+
     // API 요청 취소 및 오래된 응답 방지
     // 오래된 응답이 React 상태를 변경하는 것을 방지하는 데 도움
     const controller = new AbortController();
@@ -170,53 +179,26 @@ export default function AIChatPage() {
       sending ||
       loadingHistory ||
       loadingMessages ||
+      managingConversation ||
       sendingRef.current ||
       managingRef.current
     ) return;
 
     const orgId = organizationId == null ? null : Number(organizationId)
-    const selectedComplexId = complexId === null ? null : Number(complexId);
 
     if (!Number.isSafeInteger(orgId) || orgId <= 0) {
       setError("유효한 조직 ID가 필요합니다.");
       return;
     }
 
-    if (
-      selectedComplexId !== null
-      && (
-        !Number.isSafeInteger(selectedComplexId)
-        || selectedComplexId <= 0
-      )
-    ) {
-      setError("유효한 단지 ID가 필요합니다.");
-      return;
-    }
-
-    managingRef.current = true;
-    setManagingConversation(true);
+    // 아직 DB에 저장된 대화방을 생성하지 않는다.
+    // activeId === null 은 신규 대화 작성 상태를 뜻한다.
+    setActiveId(null);
+    setMessages([]);
+    setMessage("");
     setError("");
 
-    try {
-      const created = await createConversation({
-        organizationId: orgId,
-        complexId: selectedComplexId,
-      });
-
-      setConversations((previous) => [
-        created,
-        ...previous,
-      ]);
-
-      setActiveId(created.id);
-      setMessages([]);
-      setMessage("");
-    } catch (err) {
-      setError(getAIChatErrorMessage(err));
-    } finally {
-      managingRef.current = false;
-      setManagingConversation(false);
-    }
+    textareaRef.current?.focus();
   }
 
   async function handleDeleteConversation(conversationId) {
@@ -266,16 +248,10 @@ export default function AIChatPage() {
       sendingRef.current ||
       managingRef.current ||
       sending ||
+      managingConversation ||
       loadingHistory ||
       loadingMessages
-    ) {
-      return;
-    }
-
-    if (!activeId || !activeConversation) {
-      setError("먼저 새 대화를 생성해 주세요.");
-      return;
-    }
+    ) return;
 
     const orgId = Number(organizationId);
 
@@ -284,7 +260,41 @@ export default function AIChatPage() {
       return;
     }
 
-    const conversationId = activeId;
+    // 기존 대화방을 선택한 상태인데
+    // 대화 목록에서 찾을 수 없는 경우 전송하지 않는다.
+    if (activeId && !activeConversation) {
+      setError("대화방을 확인할 수 없습니다.");
+      return;
+    }
+
+    // 신규 대화일 때만 단지 범위를 검사한다.
+    let selectedComplexId = null;
+
+    if (!activeId) {
+      selectedComplexId =
+        complexId == null ? null : Number(complexId);
+
+      if (
+        selectedComplexId !== null &&
+        (
+          !Number.isSafeInteger(selectedComplexId) ||
+          selectedComplexId <= 0
+        )
+      ) {
+        setError("유효한 단지 ID가 필요합니다.");
+        return;
+      }
+
+      if (
+        activeOrganizationKind === "BUILDING" &&
+        selectedComplexId === null
+      ) {
+        setError("단지를 먼저 선택해 주세요.");
+        return;
+      }
+    }
+
+    // 서버 응답 전 사용자 메시지를 화면에 표시
     const temporaryId = `pending-${crypto.randomUUID()}`;
 
     // 서버가 응답하기 전에 화면에 먼저 표시할 메시지
@@ -307,14 +317,40 @@ export default function AIChatPage() {
       pendingMessage,
     ]);
 
+    // 기존 대화면 기존 ID 사용,
+    // 새 대화면 아래에서 생성된 ID로 변경
+    let conversationId = activeId;
+
     try {
+      // 1. 신규 대화일 때만 채팅방 생성
+      if (!conversationId) {
+        const created = await createConversation({
+          organizationId: orgId,
+          complexId: selectedComplexId,
+        });
+
+        conversationId = created.id;
+
+        // 채팅방 생성 후의 최초 조회가
+        // 임시 메시지를 덮어쓰지 않도록 처리
+        skipInitialLoadRef.current = conversationId;
+
+        setConversations((previous) => [
+          created,
+          ...previous,
+        ]);
+
+        setActiveId(conversationId);
+      }
+
+      // 2. 기존 또는 새로 생성된 채팅방에 전송
       const result = await sendConversationMessage({
         organizationId: orgId,
         conversationId,
         message: text,
       });
 
-      // 임시 메시지를 실제 서버 메시지로 교체
+      // 3. 임시 메시지를 실제 서버 메시지로 교체
       setMessages((previous) => {
         const updated = previous.map((item) =>
           item.id === temporaryId
@@ -328,7 +364,8 @@ export default function AIChatPage() {
         ];
       });
 
-      // 기존 대화방 제목 갱신
+      // 4. 기존 서버의 자동 제목 정책과 목록 순서 유지
+      // 사용자 지정 제목 기능 구현 시 자동 변경 제거 예정
       setConversations((previous) => {
         const updated = previous.map((conversation) => {
           if (conversation.id !== conversationId) {
@@ -353,7 +390,9 @@ export default function AIChatPage() {
       });
 
     } catch (requestError) {
-      // 실패한 임시 메시지를 화면에 유지
+    // 채팅방 생성 이후 메시지 전송이 실패했다면
+    // 이미 생성된 conversationId를 유지한다.
+    // 다음 전송에서 다시 채팅방을 생성하지 않는다.
       setMessages((previous) =>
         previous.map((item) =>
           item.id === temporaryId
@@ -421,7 +460,7 @@ export default function AIChatPage() {
 
             {!loadingHistory && conversations.length === 0 && (
               <p className="text-sm text-fixops-muted">
-                저장된 대화가 없습니다. 새 대화를 생성해 주세요.
+                저장된 대화가 없습니다. 첫 질문을 입력하면 대화가 시작됩니다.
               </p>
             )}
 
@@ -591,7 +630,6 @@ export default function AIChatPage() {
                 managingConversation ||
                 loadingHistory ||
                 loadingMessages ||
-                !activeId ||
                 !message.trim()
               }
               className="mb-1 shrink-0 rounded-full bg-fixops-primary px-5 py-2 text-xs font-bold text-white hover:bg-fixops-primary-hover"
