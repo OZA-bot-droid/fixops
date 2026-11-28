@@ -20,6 +20,7 @@ import {
   LoginPage, SignupPage, PasswordResetPage, MemberHome, OrganizationApply,
   PlatformOrganizations, ProfilePage, UnavailablePage,
 } from "../features/member/Pages";
+import AIChatPage from "../features/ai/AIChatPage"
 
 function AuthLifecycleGate({ children }) {
   const {
@@ -122,7 +123,7 @@ export default function App() {
             </Route>
             <Route element={<RoleGuard roles={["ADMIN", "TECHNICIAN"]} />}>
               <Route path="/inventory" element={<ComingSoon name="부품·재고" />} />
-              <Route path="/ai" element={<ComingSoon name="AI 점검센터" />} />
+              <Route path="/ai" element={<AIChatPage name="AI 점검센터" />} />
             </Route>
             <Route element={<RoleGuard roles={["ADMIN", "TECHNICIAN"]} requireComplex />}>
               <Route path="/asset" element={<LocationManagementPage />} />

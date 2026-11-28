@@ -37,11 +37,13 @@ export async function createConversation({
 export async function fetchConversationDetail({
   organizationId,
   conversationId,
+  signal,
 }) {
   const response = await api.get(
     `${BASE}/${conversationId}`,
     {
       headers: orgHeaders(organizationId),
+      signal,
     },
   );
 

@@ -16,8 +16,9 @@ export default function RagDocumentPanel({
   const [documents, setDocuments] = useState([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [listError, setListError] = useState("");
+  const [uploadError, setUploadError] = useState("");
 
   const validOrganization =
     Number.isSafeInteger(Number(organizationId)) &&
@@ -41,7 +42,7 @@ export default function RagDocumentPanel({
 
     setDocuments([]);
     setMessage("");
-    setError("");
+    setListError("");
 
     if (!validScope) {
       setLoadingDocuments(false);
@@ -57,7 +58,7 @@ export default function RagDocumentPanel({
         console.log("[AI] 문서 목록 응답:", data);
 
         if (!Array.isArray(data)) {
-          setError("문서 목록 응답 형식이 올바르지 않습니다.");
+          setListError("문서 목록 응답 형식이 올바르지 않습니다.");
           return;
         }
 
@@ -71,7 +72,7 @@ export default function RagDocumentPanel({
           data: err.response?.data,
         });
 
-        setError(
+        setListError(
           err.response?.data?.detail ??
           "문서 목록을 불러오지 못했습니다."
         );
@@ -95,7 +96,7 @@ export default function RagDocumentPanel({
     if (!file || !validScope || !canUpload || uploading) return;
 
     setUploading(true);
-    setError("");
+    setUploadError("");
     setMessage("");
 
     try {
@@ -120,7 +121,7 @@ export default function RagDocumentPanel({
         `${result.chunk_count}청크)`
       );
     } catch (err) {
-      setError(
+      setUploadError(
         err.response?.data?.detail ??
         "PDF 업로드에 실패했습니다."
       );
@@ -184,9 +185,9 @@ export default function RagDocumentPanel({
         </p>
       )}
 
-      {error && (
+      {uploadError && (
         <p role="alert" className="text-sm text-red-600">
-          {String(error)}
+          {String(uploadError)}
         </p>
       )}
 
@@ -204,9 +205,9 @@ export default function RagDocumentPanel({
           <p className="rounded-lg bg-slate-50 p-4 text-sm text-fixops-muted">
             문서 목록을 불러오는 중입니다...
           </p>
-        ) : error ? (
+        ) : listError ? (
           <p className="rounded-lg bg-red-50 p-4 text-sm text-red-600">
-            문서 목록 조회에 실패했습니다.
+            {listError || "문서 목록 조회에 실패했습니다."}
           </p>
         ) : documents.length === 0 ? (
           <p className="rounded-lg bg-slate-50 p-4 text-sm text-fixops-muted">

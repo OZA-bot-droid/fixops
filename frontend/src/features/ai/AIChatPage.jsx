@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "../../components/layout/AppLayout";
-import { useAuth } from "../member/AuthProvider";
-import { sendRagQuery, sendChatMessage } from "./chatApi";
 import RagSources from "./RagSources";
 import {
   createConversation,
@@ -13,45 +11,28 @@ import {
 import { Button } from "../../components/ui/index";
 import { useOrganization } from "../member/OrganizationProvider"
 import DocumentManagementModal from "./DocumentManagementModal";
+import { explainError } from "../../api/errors";
 
-const welcomeMessage = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "안녕하세요! 어떤 설비 점검이 필요하신가요?\n설비 상태, 수리 이력, 예약 일정을 확인할 수 있어요.",
-};
+function getAIChatErrorMessage(error) {
+  const code = error?.response?.data?.error?.code;
 
-function getErrorMessage(error) {
-  if (error.response?.status === 401) {
-    return "인증이 필요하거나 AI 인증 연동이 아직 준비되지 않았습니다.";
+  if (code === "AI_PROVIDER_UNAVAILABLE") {
+    return "AI 응답 서비스를 일시적으로 사용할 수 없습니다.";
   }
 
-  if (error.response?.status === 403) {
-    return "이 AI 기능에 접근할 권한이 없습니다.";
+  if (code === "DATABASE_POOL_UNAVAILABLE") {
+    return "데이터베이스 연결이 일시적으로 부족합니다.";
   }
 
-  if (error.response?.status === 429) {
-    return "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.";
+  if (code === "MCP_CONNECTION_UNAVAILABLE") {
+    return "업무 정보 조회 서비스를 일시적으로 사용할 수 없습니다.";
   }
 
-  if (error.response?.status >= 500) {
-    return "AI 서버에서 오류가 발생했습니다.";
-  }
-
-  if (error.code === "ECONNABORTED") {
-    return "AI 응답 시간이 초과되었습니다.";
-  }
-
-  if (!error.response) {
-    return "서버에 연결할 수 없습니다.";
-  }
-
-  return "요청을 처리하지 못했습니다.";
+  return explainError(error);
 }
 
 export default function AIChatPage() {
 
-  const { user } = useAuth();
   const {
     activeOrganizationId,   // Header에서 선택한 조직 ID
     activeComplexId,        // 선택한 단지 ID. 없으면 null
@@ -63,18 +44,18 @@ export default function AIChatPage() {
   const complexId = activeComplexId;
 
   const [documentModalOpen, setDocumentModalOpen] = useState(false);
-
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
-
-  const messagesRef = useRef(null);
-
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+
+  const messagesRef = useRef(null);
+  const textareaRef = useRef(null);
+  const sendingRef = useRef(false); // 중복 요청 방지
 
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeId
@@ -108,10 +89,7 @@ export default function AIChatPage() {
         setActiveId(data[0]?.id ?? null);
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err.response?.data?.detail ??
-            "대화 목록을 불러오지 못했습니다."
-          );
+          setError(explainError(err));
         }
       } finally {
         if (!cancelled) setLoadingHistory(false);
@@ -133,58 +111,56 @@ export default function AIChatPage() {
   }, [organizationId]);
 
   useEffect(() => {
-    let cancelled = false;
+    if(!activeId) {
+      setMessages([]);
+      setLoadingMessages(false);
+      return;
+    }
 
+    // API 요청 취소 및 오래된 응답 방지
+    // 오래된 응답이 React 상태를 변경하는 것을 방지하는 데 도움
+    const controller = new AbortController();
     async function loadMessages() {
       setLoadingMessages(true);
-      setMessages([]);
 
       try {
         const detail = await fetchConversationDetail({
           organizationId: Number(organizationId),
           conversationId: activeId,
+          signal: controller.signal,
         });
 
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setMessages(detail.messages ?? []);
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(
-            err.response?.data?.detail ??
-            "대화 메시지를 불러오지 못했습니다."
-          );
+        if (!controller.signal.aborted) {
+          setError(getAIChatErrorMessage(err));
         }
       } finally {
-        if (!cancelled) setLoadingMessages(false);
+        if (!controller.signal.aborted) setLoadingMessages(false);
       }
     }
 
-    if (activeId) {
-      loadMessages();
-    } else {
-      setMessages([]);
-      setLoadingMessages(false);
-    }
-
-    return () => {
-      cancelled = true;
-    };
+    loadMessages();
+    return () => controller.abort();
   }, [activeId, organizationId]);
 
-  function addMessage(conversationId, item, title) {
-    setConversations((previous) =>
-      previous.map((conversation) =>
-        conversation.id === conversationId
-          ? {
-              ...conversation,
-              title: title ?? conversation.title,
-              messages: [...conversation.messages, item],
-            }
-          : conversation,
-      ),
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+
+    const nextHeight = Math.min(
+      textarea.scrollHeight,
+      180,
     );
-  }
+
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY =
+      textarea.scrollHeight > 180 ? "auto" : "hidden";
+  }, [message]);
 
   async function startNewChat() {
     if (sending || loadingHistory) return;
@@ -225,10 +201,7 @@ export default function AIChatPage() {
       setMessages([]);
       setMessage("");
     } catch (err) {
-      setError(
-        err.response?.data?.detail ??
-        "새 대화를 생성하지 못했습니다."
-      );
+      setError(explainError(err));
     }
   }
 
@@ -254,10 +227,7 @@ export default function AIChatPage() {
         setMessages([]);
       }
     } catch (err) {
-      setError(
-        err.response?.data?.detail ??
-        "대화를 삭제하지 못했습니다."
-      );
+      setError(explainError(err));
     }
   }
 
@@ -268,6 +238,7 @@ export default function AIChatPage() {
 
     if (
       !text ||
+      sendingRef.current ||
       sending ||
       loadingHistory ||
       loadingMessages
@@ -287,28 +258,54 @@ export default function AIChatPage() {
       return;
     }
 
+    const conversationId = activeId;
+    const temporaryId = `pending-${crypto.randomUUID()}`;
+
+    // 서버가 응답하기 전에 화면에 먼저 표시할 메시지
+    const pendingMessage = {
+      id: temporaryId,
+      role: "user",
+      content: text,
+      sources: [],
+      pending: true,
+    };
+
+    sendingRef.current = true;
     setSending(true);
     setError("");
     setMessage("");
 
+    // 사용자 질문 즉시 표시
+    setMessages((previous) => [
+      ...previous,
+      pendingMessage,
+    ]);
+
     try {
       const result = await sendConversationMessage({
         organizationId: orgId,
-        conversationId: activeId,
+        conversationId,
         message: text,
       });
 
-      // Backend에서 반환한 실제 저장 메시지 사용
-      setMessages((previous) => [
-        ...previous,
-        result.user_message,
-        result.assistant_message,
-      ]);
+      // 임시 메시지를 실제 서버 메시지로 교체
+      setMessages((previous) => {
+        const updated = previous.map((item) =>
+          item.id === temporaryId
+            ? result.user_message
+            : item
+        );
 
-      // 첫 메시지가 입력되면 제목 갱신
+        return [
+          ...updated,
+          result.assistant_message,
+        ];
+      });
+
+      // 기존 대화방 제목 갱신
       setConversations((previous) => {
         const updated = previous.map((conversation) => {
-          if (conversation.id !== activeId) {
+          if (conversation.id !== conversationId) {
             return conversation;
           }
 
@@ -328,20 +325,24 @@ export default function AIChatPage() {
             new Date(a.updated_at)
         );
       });
+
     } catch (requestError) {
-      console.error(
-        "History 메시지 전송 오류:",
-        requestError.response?.data ?? requestError
+      // 실패한 임시 메시지를 화면에 유지
+      setMessages((previous) =>
+        previous.map((item) =>
+          item.id === temporaryId
+            ? {
+                ...item,
+                pending: false,
+                failed: true,
+              }
+            : item
+        )
       );
 
-      // 실패한 질문은 입력창에 보존
-      setMessage(text);
-
-      setError(
-        requestError.response?.data?.detail ??
-        "메시지 전송에 실패했습니다."
-      );
+      setError(getAIChatErrorMessage(requestError));
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -364,7 +365,7 @@ export default function AIChatPage() {
         description="설비 매뉴얼과 과거 점검 이력을 기반으로 AI가 답합니다."
       />
 
-      <div className="grid h-[calc(100dvh-220px)] min-h-[440px] max-h-[600px] gap-5 lg:grid-cols-[285px_minmax(0,1fr)]">
+      <div className="grid h-[calc(100dvh-210px)] min-h-[560px] gap-5 lg:grid-cols-[285px_minmax(0,1fr)]">
         {/* 대화 목록 */}
         <aside className="flex h-full min-h-0 flex-col overflow-y-auto rounded-[14px] border border-fixops-border bg-white p-[14px]">
           <div className="flex items-center justify-between gap-2 px-2 py-3">
@@ -474,6 +475,33 @@ export default function AIChatPage() {
               >
                 <div>{item.content}</div>
 
+                {item.failed && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-red-600">
+                      전송 실패
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={sending}
+                      onClick={() => {
+                        setMessage(item.content);
+
+                        setMessages((previous) =>
+                          previous.filter(
+                            (entry) => entry.id !== item.id
+                          )
+                        );
+
+                        textareaRef.current?.focus();
+                      }}
+                      className="text-xs font-semibold text-fixops-primary underline"
+                    >
+                      다시 작성
+                    </button>
+                  </div>
+                )}
+
                 {item.role === "assistant" && (
                   <RagSources sources={item.sources} />
                 )}
@@ -500,18 +528,20 @@ export default function AIChatPage() {
           {/* 입력창 */}
           <form
             onSubmit={handleSubmit}
-            className="mx-6 mb-6 flex items-end gap-3 rounded-[12px] bg-fixops-background p-2"
+            className="mx-4 mb-4 flex shrink-0 items-end gap-2 rounded-[22px] border border-fixops-border bg-fixops-background p-2 shadow-sm sm:mx-6 sm:mb-6"
           >
             <textarea
+              ref={textareaRef}
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               onKeyDown={handleKeyDown}
               disabled={sending}
               maxLength={4000}
               rows={1}
-              placeholder="무엇이든 질문해보세요..."
+              placeholder={sending? "전송 중..." : "무엇이든 질문해보세요..."}
               aria-label="AI에게 질문"
-              className="max-h-32 min-h-[38px] flex-1 resize-none border-0 bg-transparent px-3 py-2 text-[14px] text-fixops-text outline-none placeholder:text-fixops-muted"
+              aria-busy={sending}
+              className="min-h-[42px] min-w-0 flex-1 resize-none border-0 bg-transparent px-3 py-2.5 text-[14px] leading-6 text-fixops-text outline-none placeholder:text-fixops-muted"
             />
 
             <button
@@ -523,7 +553,7 @@ export default function AIChatPage() {
                 !activeId ||
                 !message.trim()
               }
-              className="mb-1 rounded-full bg-fixops-primary px-5 py-2 text-xs font-bold text-white hover:bg-fixops-primary-hover"
+              className="mb-1 shrink-0 rounded-full bg-fixops-primary px-5 py-2 text-xs font-bold text-white hover:bg-fixops-primary-hover"
             >
               {sending ? "전송 중" : "전송"}
             </button>
